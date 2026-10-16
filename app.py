@@ -21,6 +21,7 @@ import os
 import tempfile
 import sqlite3
 from datetime import datetime, timedelta
+from html import escape as html_escape
 from typing import NamedTuple
 import pandas as pd
 import streamlit as st
@@ -105,6 +106,308 @@ def logout() -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+#  Theme (dark charcoal + gold) and small visual helpers — styling only
+# ─────────────────────────────────────────────────────────────────────────────
+
+_THEME_CSS = """<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+:root{
+  --bk-bg:#121214; --bk-card:#1b1b1e; --bk-card2:#232326; --bk-input:#18181b;
+  --bk-line:rgba(255,255,255,.07); --bk-text:#ece7df; --bk-muted:#8f897f;
+  --bk-gold:#e3a857; --bk-gold2:#f3c77a; --bk-gold3:#b97f34;
+}
+
+/* helper <style> blocks should not leave an empty gap */
+[data-testid="stElementContainer"]:has(> [data-testid="stMarkdownContainer"] > style),
+.element-container:has(> [data-testid="stMarkdownContainer"] > style){display:none;}
+
+/* base */
+.stApp{
+  background:
+    radial-gradient(1100px 560px at 88% -8%, rgba(227,168,87,.09), transparent 60%),
+    radial-gradient(900px 520px at -8% 108%, rgba(227,168,87,.06), transparent 60%),
+    var(--bk-bg);
+  color:var(--bk-text);
+  font-family:'Inter','Segoe UI',system-ui,-apple-system,sans-serif;
+}
+h1,h2,h3,h4,h5,h6,p,label,li,button,input,textarea,td,th{
+  font-family:'Inter','Segoe UI',system-ui,-apple-system,sans-serif;
+}
+[data-testid="stHeader"]{background:transparent;}
+#MainMenu, footer, .stDeployButton, [data-testid="stToolbar"]{visibility:hidden;}
+.block-container, [data-testid="stMainBlockContainer"]{padding-top:1.2rem;max-width:1400px;}
+h1{font-size:1.85rem !important;font-weight:650 !important;letter-spacing:-.01em;color:#f4efe6;}
+h2,h3{color:#f4efe6;font-weight:600 !important;}
+h3{font-size:1.15rem !important;}
+hr{border-color:var(--bk-line) !important;}
+[data-testid="stCaptionContainer"]{color:var(--bk-muted);}
+[data-testid="stWidgetLabel"] p, label{color:#cfc8bc;}
+:not(pre) > code{background:rgba(227,168,87,.12);color:var(--bk-gold2);border-radius:6px;}
+::-webkit-scrollbar{width:8px;height:8px;}
+::-webkit-scrollbar-thumb{background:#34343a;border-radius:8px;}
+
+/* sidebar = dark rail */
+[data-testid="stSidebar"]{
+  background:linear-gradient(180deg,#0d0d0f,#141417);
+  border-right:1px solid var(--bk-line);
+}
+[data-testid="stSidebar"] > div:first-child{background:transparent;}
+[data-testid="stSidebar"] h3{font-size:1rem !important;margin-bottom:.2rem;}
+[data-testid="stSidebar"] [data-testid="stWidgetLabel"] p{
+  text-transform:uppercase;letter-spacing:.14em;font-size:.68rem;color:var(--bk-muted);
+}
+[data-testid="stSidebar"] [role="radiogroup"]{gap:4px;}
+[data-testid="stSidebar"] [role="radiogroup"] > label{
+  width:100%;padding:10px 14px;border-radius:14px;border:1px solid transparent;
+  cursor:pointer;transition:all .15s ease;
+}
+[data-testid="stSidebar"] [role="radiogroup"] > label > div:first-child{display:none;}
+[data-testid="stSidebar"] [role="radiogroup"] > label:hover{background:rgba(227,168,87,.08);}
+[data-testid="stSidebar"] [role="radiogroup"] > label:has(input:checked){
+  background:linear-gradient(135deg,rgba(227,168,87,.22),rgba(227,168,87,.06));
+  border-color:rgba(227,168,87,.45);
+  box-shadow:0 0 18px rgba(227,168,87,.14);
+}
+[data-testid="stSidebar"] [role="radiogroup"] > label:has(input:checked) p{color:var(--bk-gold2);font-weight:600;}
+
+/* brand + top bar */
+.bk-orb{display:inline-block;width:14px;height:14px;border-radius:50%;
+  background:radial-gradient(circle at 35% 30%,#ffe2a8,#e3a857 55%,#8a5a22);
+  box-shadow:0 0 12px rgba(227,168,87,.7);}
+.bk-orb.big{width:38px;height:38px;flex:0 0 38px;}
+.bk-brand{display:flex;align-items:center;gap:12px;padding:6px 4px 16px;margin-bottom:10px;
+  border-bottom:1px solid var(--bk-line);}
+.bk-brand b{display:block;font-size:1.1rem;color:#f4efe6;letter-spacing:.02em;}
+.bk-brand small{color:var(--bk-muted);font-size:.72rem;letter-spacing:.08em;text-transform:uppercase;}
+.bk-top{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;
+  padding:10px 16px;margin-bottom:14px;border-radius:16px;
+  background:linear-gradient(145deg,#232326,#18181b);border:1px solid var(--bk-line);
+  box-shadow:0 8px 24px rgba(0,0,0,.3);}
+.bk-top-l{display:flex;align-items:center;gap:10px;color:var(--bk-muted);font-size:.9rem;}
+.bk-top-l b{color:#f4efe6;}
+.bk-top-l i{opacity:.5;font-style:normal;}
+.bk-top-r{display:flex;align-items:center;gap:12px;}
+.bk-chip{padding:4px 12px;border-radius:999px;font-size:.78rem;color:var(--bk-gold2);
+  background:rgba(227,168,87,.12);border:1px solid rgba(227,168,87,.35);}
+.bk-date{color:var(--bk-muted);font-size:.8rem;}
+
+/* login hero */
+.bk-hero{text-align:center;padding:1.2rem 0 .6rem;}
+.bk-hero h1{margin:.2rem 0 .1rem;}
+.bk-hero h1 span{background:linear-gradient(135deg,#f6d08c,#d99a45);-webkit-background-clip:text;
+  background-clip:text;color:transparent;-webkit-text-fill-color:transparent;}
+.bk-hero p{color:var(--bk-muted);font-size:1.02rem;margin:0;}
+.bk-logo{width:68px;height:68px;margin:0 auto 10px;border-radius:50%;display:grid;place-items:center;
+  font-size:30px;background:radial-gradient(circle at 35% 30%,#3a3126,#1a1816 70%);
+  border:1px solid rgba(227,168,87,.55);
+  box-shadow:0 0 30px rgba(227,168,87,.35),inset 0 0 14px rgba(227,168,87,.18);}
+
+/* cards: metrics, expanders, custom */
+[data-testid="stMetric"], .bk-card{
+  background:linear-gradient(145deg,#242427,#18181b);
+  border:1px solid var(--bk-line);border-radius:20px;padding:16px 20px;
+  box-shadow:0 10px 30px rgba(0,0,0,.35),inset 0 1px 0 rgba(255,255,255,.04);
+}
+[data-testid="stMetricLabel"] p{color:var(--bk-muted);text-transform:uppercase;letter-spacing:.08em;font-size:.7rem;}
+[data-testid="stMetricValue"]{color:var(--bk-gold2);font-weight:600;font-size:clamp(1.1rem,1.7vw,1.7rem);}
+[data-testid="stExpander"] details{
+  background:linear-gradient(145deg,#222225,#18181b);border:1px solid var(--bk-line);border-radius:16px;
+}
+[data-testid="stExpander"] summary{color:#f4efe6;}
+.bk-row{display:flex;flex-wrap:wrap;gap:16px;margin:18px 0 8px;}
+.bk-row .bk-card{flex:2 1 360px;min-height:250px;}
+.bk-row .bk-card.narrow{flex:1 1 280px;}
+.bk-card-t{color:var(--bk-muted);text-transform:uppercase;letter-spacing:.1em;font-size:.72rem;margin-bottom:14px;}
+.bk-cap{text-align:center;color:var(--bk-muted);font-size:.82rem;margin-top:12px;}
+
+/* gauge (ring) */
+.bk-gauge{width:150px;height:150px;border-radius:50%;margin:0 auto;display:grid;place-items:center;
+  background:conic-gradient(var(--bk-gold) var(--deg),#2b2b2f 0);
+  box-shadow:0 0 30px rgba(227,168,87,.16);}
+.bk-gauge-in{width:118px;height:118px;border-radius:50%;background:#18181b;display:flex;
+  flex-direction:column;align-items:center;justify-content:center;}
+.bk-gauge-in b{font-size:1.6rem;color:var(--bk-gold2);font-weight:600;}
+.bk-gauge-in span{font-size:.72rem;color:var(--bk-muted);text-transform:uppercase;letter-spacing:.1em;}
+
+/* pill bars */
+.bk-bars{display:flex;justify-content:space-around;align-items:flex-end;gap:10px;padding-top:4px;}
+.bk-bar{display:flex;flex-direction:column;align-items:center;gap:6px;min-width:0;flex:1;}
+.bk-bar-val{font-size:.78rem;color:var(--bk-gold2);}
+.bk-bar-track{width:22px;height:150px;border-radius:999px;background:#2a2a2e;display:flex;align-items:flex-end;}
+.bk-bar-fill{width:100%;border-radius:999px;background:linear-gradient(180deg,#f3c77a,#c98a3c);
+  box-shadow:0 0 14px rgba(227,168,87,.35);}
+.bk-bar-lbl{font-size:.7rem;color:var(--bk-muted);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+
+/* inputs */
+div[data-baseweb="input"], div[data-baseweb="base-input"], div[data-baseweb="select"] > div,
+[data-testid="stTextArea"] textarea{
+  background:var(--bk-input) !important;border-color:#2d2d31 !important;border-radius:12px !important;
+  color:var(--bk-text) !important;
+}
+div[data-baseweb="input"] input, div[data-baseweb="select"] input, div[data-baseweb="select"] div{color:var(--bk-text);}
+div[data-baseweb="input"]:focus-within, div[data-baseweb="select"] > div:focus-within{
+  border-color:var(--bk-gold) !important;box-shadow:0 0 0 1px rgba(227,168,87,.5);
+}
+div[data-baseweb="popover"] ul, div[data-baseweb="menu"]{background:#1d1d20 !important;}
+li[role="option"]{color:var(--bk-text);}
+li[role="option"]:hover, li[aria-selected="true"]{background:rgba(227,168,87,.14) !important;}
+
+/* buttons */
+.stButton > button, .stDownloadButton > button, .stFormSubmitButton > button{
+  border-radius:12px;border:1px solid rgba(227,168,87,.35);background:#1c1c1f;color:var(--bk-gold2);
+  font-weight:600;transition:all .15s ease;
+}
+.stButton > button p, .stDownloadButton > button p{color:inherit;}
+.stButton > button:hover, .stDownloadButton > button:hover{
+  border-color:var(--bk-gold);box-shadow:0 0 16px rgba(227,168,87,.25);color:#fff;
+}
+.stButton > button[kind="primary"], .stButton > button[data-testid="stBaseButton-primary"],
+.stFormSubmitButton > button[kind="primary"]{
+  background:linear-gradient(135deg,#f3c77a,#d99a45);color:#1a1405;border:none;
+  box-shadow:0 6px 18px rgba(217,154,69,.28);
+}
+.stButton > button[kind="primary"]:hover, .stButton > button[data-testid="stBaseButton-primary"]:hover{
+  color:#1a1405;box-shadow:0 8px 24px rgba(217,154,69,.45);filter:brightness(1.05);
+}
+
+/* tabs as pills */
+.stTabs [data-baseweb="tab-list"]{
+  gap:6px;background:#17171a;padding:5px;border-radius:14px;border:1px solid var(--bk-line);
+}
+.stTabs [data-baseweb="tab"]{height:auto;padding:8px 16px;border-radius:10px;color:var(--bk-muted);background:transparent;}
+.stTabs [aria-selected="true"]{
+  background:linear-gradient(135deg,rgba(227,168,87,.24),rgba(227,168,87,.08));color:var(--bk-gold2) !important;
+}
+.stTabs [data-baseweb="tab-highlight"], .stTabs [data-baseweb="tab-border"]{display:none;}
+
+/* tables + alerts */
+[data-testid="stDataFrame"]{border:1px solid var(--bk-line);border-radius:16px;overflow:hidden;}
+[data-testid="stAlert"]{border-radius:14px;}
+</style>"""
+
+# Only used when the Streamlit base theme is not dark (no .streamlit/config.toml):
+# darkens the canvas-based tables so they match the page.
+_LIGHT_BASE_FALLBACK_CSS = (
+    '<style>[data-testid="stDataFrame"]{filter:invert(.9) hue-rotate(180deg);}</style>'
+)
+
+
+def inject_theme() -> None:
+    """Apply the dark + gold theme. Styling only."""
+    st.markdown(_THEME_CSS, unsafe_allow_html=True)
+    try:
+        base = st.get_option("theme.base")
+    except Exception:
+        base = None
+    if base != "dark":
+        st.markdown(_LIGHT_BASE_FALLBACK_CSS, unsafe_allow_html=True)
+
+
+def _sidebar_brand() -> None:
+    st.markdown(
+        '<div class="bk-brand"><span class="bk-orb big"></span>'
+        '<div><b>BankOS</b><small>Enterprise Banking</small></div></div>',
+        unsafe_allow_html=True,
+    )
+
+
+def _topbar(section: str, role: str) -> None:
+    st.markdown(
+        '<div class="bk-top"><div class="bk-top-l"><span class="bk-orb"></span>'
+        f'<b>BankOS</b><i>/</i><span>{html_escape(section)}</span></div>'
+        f'<div class="bk-top-r"><span class="bk-chip">{html_escape(role)}</span>'
+        f'<span class="bk-date">{datetime.now():%a, %d %b %Y}</span></div></div>',
+        unsafe_allow_html=True,
+    )
+
+
+def _card(title: str, body: str, narrow: bool = False) -> str:
+    cls = "bk-card narrow" if narrow else "bk-card"
+    return f'<div class="{cls}"><div class="bk-card-t">{html_escape(title)}</div>{body}</div>'
+
+
+def _gauge_html(pct: float, title: str, caption: str) -> str:
+    pct = max(0.0, min(100.0, float(pct)))
+    return (
+        f'<div class="bk-gauge" style="--deg:{pct * 3.6:.1f}deg"><div class="bk-gauge-in">'
+        f'<b>{pct:.0f}%</b><span>{html_escape(title)}</span></div></div>'
+        f'<div class="bk-cap">{html_escape(caption)}</div>'
+    )
+
+
+def _short_num(v: float) -> str:
+    v = abs(float(v))
+    if v >= 1_000_000:
+        return f"{v / 1_000_000:.1f}M"
+    if v >= 1_000:
+        return f"{v / 1_000:.1f}k"
+    return f"{v:.0f}"
+
+
+def _bars_html(items: list) -> str:
+    """items: list of (label, value, display_text)."""
+    peak = max((abs(float(v)) for _, v, _ in items), default=0) or 1
+    cols = []
+    for label, val, disp in items:
+        h = max(6, round(abs(float(val)) / peak * 100))
+        cols.append(
+            '<div class="bk-bar">'
+            f'<div class="bk-bar-val">{html_escape(str(disp))}</div>'
+            f'<div class="bk-bar-track"><div class="bk-bar-fill" style="height:{h}%"></div></div>'
+            f'<div class="bk-bar-lbl">{html_escape(str(label))}</div></div>'
+        )
+    return '<div class="bk-bars">' + "".join(cols) + "</div>"
+
+
+def _render_admin_visuals(conn: sqlite3.Connection, total_accs: int, frozen: int) -> None:
+    try:
+        rows = conn.execute("SELECT acc_type, COUNT(*) AS cnt FROM accounts GROUP BY acc_type").fetchall()
+        items = [(str(r["acc_type"]).replace("_", " ").title(), r["cnt"], str(r["cnt"])) for r in rows]
+        pct = (frozen / total_accs * 100) if total_accs else 0
+        cards = [_card("Frozen Accounts", _gauge_html(pct, "frozen", f"{frozen} of {total_accs} accounts"), narrow=True)]
+        if items:
+            cards.append(_card("Accounts by Type", _bars_html(items)))
+        st.markdown(f'<div class="bk-row">{"".join(cards)}</div>', unsafe_allow_html=True)
+    except Exception:
+        pass
+
+
+def _render_customer_visuals(conn: sqlite3.Connection, logs, row, acc_num: int, currency: str, is_cc: bool) -> None:
+    try:
+        cards = []
+        if is_cc and (row["credit_card_limit"] or 0) > 0:
+            used, lim = row["credit_used"] or 0, row["credit_card_limit"]
+            cards.append(_card(
+                "Credit Utilization",
+                _gauge_html(used / lim * 100, "used", f"{format_money(used, currency)} of {format_money(lim, currency)}"),
+                narrow=True,
+            ))
+        elif row["vault_no"]:
+            vb, bal = row["vault_balance"] or 0, row["acc_balance"] or 0
+            pct = vb / (vb + bal) * 100 if (vb + bal) else 0
+            cards.append(_card(
+                "Vault Reserve",
+                _gauge_html(pct, "in vault", f"{format_money(vb, currency)} secured"),
+                narrow=True,
+            ))
+
+        tx = [dict(r) for r in recent_transactions(conn, acc_num, limit=8, tx_log_conn=logs.tx)]
+        tx.sort(key=lambda d: str(d.get("timestamp", "")))
+        items = [
+            (str(d.get("type") or "tx").replace("_", " ")[:8], from_minor(d["amount"]), _short_num(from_minor(d["amount"])))
+            for d in tx[-8:]
+            if d.get("amount") is not None
+        ]
+        if items:
+            cards.append(_card("Recent Activity", _bars_html(items)))
+        if cards:
+            st.markdown(f'<div class="bk-row">{"".join(cards)}</div>', unsafe_allow_html=True)
+    except Exception:
+        pass
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 #  Authentication Screen
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -113,11 +416,16 @@ def render_login() -> None:
 
     st.markdown(
         """
-        <div style="text-align: center; padding: 1.5rem 0 1rem 0;">
-            <h1 style="margin-bottom: 0.2rem;">🏦 BankOS Enterprise</h1>
-            <p style="color: #6c757d; font-size: 1.1rem;">Secure Digital Core Banking & Asset Management Platform</p>
+        <div class="bk-hero">
+            <div class="bk-logo">🏦</div>
+            <h1>BankOS <span>Enterprise</span></h1>
+            <p>Secure Digital Core Banking & Asset Management Platform</p>
         </div>
         """,
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        '<style>.block-container,[data-testid="stMainBlockContainer"]{max-width:1050px;}</style>',
         unsafe_allow_html=True,
     )
 
@@ -212,6 +520,7 @@ def render_admin_portal() -> None:
     conn, logs = init_dbs()
 
     with st.sidebar:
+        _sidebar_brand()
         st.markdown(f"### 🛡️ Bank Admin\n**User:** `{st.session_state.identifier}`")
         menu = st.radio(
             "Navigation",
@@ -228,6 +537,8 @@ def render_admin_portal() -> None:
         st.markdown("---")
         if st.button("Log Out", use_container_width=True):
             logout()
+
+    _topbar(menu, f"Admin · {st.session_state.identifier}")
 
     if menu == "📊 Overview":
         st.title("Platform Statistics & Overview")
@@ -250,6 +561,8 @@ def render_admin_portal() -> None:
         m5.metric("USD Pool", format_money(usd_pool, "USD"))
 
         st.markdown(f"**Live Exchange Rate:** `1 USD = {rate:.2f} BDT` *(Source: `config.json`)*")
+
+        _render_admin_visuals(conn, total_accs, frozen)
 
         col_a, col_b = st.columns(2)
         with col_a:
@@ -631,6 +944,7 @@ def render_customer_portal() -> None:
     is_frozen = bool(row["is_frozen"])
 
     with st.sidebar:
+        _sidebar_brand()
         st.markdown(f"### 👤 Customer Portal\n**Account:** `#{acc_num}`  \n**Type:** `{row['acc_type'].replace('_', ' ').title()}`")
         nav_options = [
             "🏠 Account Overview",
@@ -653,6 +967,8 @@ def render_customer_portal() -> None:
         if st.button("Log Out", use_container_width=True):
             logout()
 
+    _topbar(menu, f"Customer · #{acc_num}")
+
     if is_frozen:
         st.error("⚠️ **ACCOUNT IS FROZEN.** Transactions and outbound withdrawals are restricted.")
 
@@ -663,6 +979,8 @@ def render_customer_portal() -> None:
             st.metric("Liquid Available Balance", format_money(balance, currency))
         with col_m2:
             st.metric("Dual-Currency Equivalent", format_money_dual(balance, currency).split("≈")[1].replace(")", "").strip())
+
+        _render_customer_visuals(conn, logs, row, acc_num, currency, is_cc)
 
         st.markdown("---")
         c1, c2 = st.columns(2)
@@ -1028,6 +1346,7 @@ def render_customer_portal() -> None:
 
 def main() -> None:
     st.set_page_config(page_title="BankOS Enterprise", page_icon="🏦", layout="wide")
+    inject_theme()
     init_dbs()
 
     if "logged_in" not in st.session_state:
