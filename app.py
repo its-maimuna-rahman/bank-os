@@ -106,16 +106,131 @@ def logout() -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-#  Theme (dark charcoal + gold) and small visual helpers — styling only
+#  Theme (soft blue + deep teal dashboard) and small visual helpers — styling only
 # ─────────────────────────────────────────────────────────────────────────────
 
+import functools
+import re
+import urllib.parse
+
+# ── icon system ──────────────────────────────────────────────────────────────
+# Raw emojis in labels are shown as themed Material icons instead. The original
+# strings are never changed in the logic (menu comparisons still use them): the
+# swap happens at display time only, and silently falls back to the emoji on
+# Streamlit versions that cannot render :material/...: shortcodes.
+
+_EMOJI_ICONS = {
+    "📊": "dashboard", "👥": "group", "🔐": "lock", "⏳": "hourglass_top", "📜": "receipt_long",
+    "🗄": "database", "📄": "description", "🛡": "shield", "👤": "person", "🔑": "key",
+    "⚡": "bolt", "📋": "list_alt", "➕": "add_circle", "❄": "ac_unit", "🔄": "sync",
+    "⚙": "settings", "🗑": "delete", "💡": "lightbulb", "🏛": "request_quote", "🏠": "home",
+    "💰": "payments", "💸": "swap_horiz", "💳": "credit_card", "📈": "trending_up", "🖋": "edit_note",
+    "🏦": "account_balance", "📥": "move_to_inbox", "📤": "outbox", "💎": "diamond", "⚠": "warning",
+    "✅": "check_circle", "❌": "cancel", "🎉": "celebration", "🔓": "lock_open", "📱": "sms",
+    "💱": "currency_exchange", "⬇": "download", "➔": "arrow_right_alt",
+}
+_EMOJI_RE = re.compile("(" + "|".join(map(re.escape, _EMOJI_ICONS)) + ")[\ufe0f]?")
+
+
+def _material_supported() -> bool:
+    """:material/name: shortcodes in labels need Streamlit >= 1.40."""
+    try:
+        major, minor = (int(x) for x in st.__version__.split(".")[:2])
+        return (major, minor) >= (1, 40)
+    except Exception:
+        return False
+
+
+def _ic(text):
+    """Replace known emojis in a label/markdown string by Material icon shortcodes."""
+    if not isinstance(text, str) or not _material_supported():
+        return text
+    return _EMOJI_RE.sub(lambda m: f":material/{_EMOJI_ICONS[m.group(1)]}:", text)
+
+
+def _install_icon_labels() -> None:
+    """Route Streamlit's text-taking widgets through _ic(). Display-only; values are untouched."""
+    if getattr(st, "_bk_icons_installed", False) or not _material_supported():
+        return
+
+    def first_arg(fn, kw="label"):
+        @functools.wraps(fn)
+        def inner(*a, **k):
+            if a:
+                a = (_ic(a[0]),) + tuple(a[1:])
+            elif kw in k:
+                k[kw] = _ic(k[kw])
+            return fn(*a, **k)
+        return inner
+
+    orig_markdown, orig_tabs, orig_radio = st.markdown, st.tabs, st.radio
+
+    @functools.wraps(orig_markdown)
+    def markdown(body, *a, **k):
+        raw_html = k.get("unsafe_allow_html", a[0] if a else False)
+        return orig_markdown(body if raw_html else _ic(body), *a, **k)
+
+    @functools.wraps(orig_tabs)
+    def tabs(tabs, *a, **k):
+        return orig_tabs([_ic(t) for t in tabs], *a, **k)
+
+    @functools.wraps(orig_radio)
+    def radio(label, options=(), *a, **k):
+        if len(a) < 2:  # no positional format_func given
+            base = k.pop("format_func", None) or str
+            k["format_func"] = lambda o, _b=base: _ic(str(_b(o)))
+        return orig_radio(label, options, *a, **k)
+
+    st.markdown, st.tabs, st.radio = markdown, tabs, radio
+    for name, kw in (("button", "label"), ("download_button", "label"), ("expander", "label"),
+                     ("success", "body"), ("info", "body"), ("warning", "body"), ("error", "body")):
+        setattr(st, name, first_arg(getattr(st, name), kw))
+    st._bk_icons_installed = True
+
+
+# Line icons (24px grid, Lucide-style paths) used by the custom HTML / CSS tiles.
+_SVG_ICONS = {
+    "bank": '<line x1="3" x2="21" y1="22" y2="22"/><line x1="6" x2="6" y1="18" y2="11"/><line x1="10" x2="10" y1="18" y2="11"/>'
+            '<line x1="14" x2="14" y1="18" y2="11"/><line x1="18" x2="18" y1="18" y2="11"/><polygon points="12 2 20 7 4 7"/>',
+    "snow": '<line x1="2" x2="22" y1="12" y2="12"/><line x1="12" x2="12" y1="2" y2="22"/><path d="m20 16-4-4 4-4"/>'
+            '<path d="m4 8 4 4-4 4"/><path d="m16 4-4 4-4-4"/><path d="m8 20 4-4 4 4"/>',
+    "hourglass": '<path d="M5 22h14"/><path d="M5 2h14"/><path d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22"/>'
+                 '<path d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2"/>',
+    "wallet": '<path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1"/>'
+              '<path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4"/>',
+    "cash": '<rect width="20" height="12" x="2" y="6" rx="2"/><circle cx="12" cy="12" r="2"/><path d="M6 12h.01M18 12h.01"/>',
+    "swap": '<path d="M8 3 4 7l4 4"/><path d="M4 7h16"/><path d="m16 21 4-4-4-4"/><path d="M20 17H4"/>',
+    "calendar": '<path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/>',
+    "bell": '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>',
+}
+
+
+def _svg(name: str, size: int = 18, stroke: str = "currentColor", sw: float = 2) -> str:
+    return (
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{size}" height="{size}" viewBox="0 0 24 24" fill="none" '
+        f'stroke="{stroke}" stroke-width="{sw}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+        f'{_SVG_ICONS[name]}</svg>'
+    )
+
+
+def _icon_vars_css() -> str:
+    """CSS custom properties holding each icon as a data-URI (used as a colourable mask)."""
+    out = []
+    for name in _SVG_ICONS:
+        uri = urllib.parse.quote(_svg(name, 24, "black", 2))
+        out.append(f'--ic-{name}:url("data:image/svg+xml,{uri}");')
+    return ":root{" + "".join(out) + "}"
+
+
 _THEME_CSS = """<style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap');
+/*__ICON_VARS__*/
 
 :root{
-  --bk-bg:#121214; --bk-card:#1b1b1e; --bk-card2:#232326; --bk-input:#18181b;
-  --bk-line:rgba(255,255,255,.07); --bk-text:#ece7df; --bk-muted:#8f897f;
-  --bk-gold:#e3a857; --bk-gold2:#f3c77a; --bk-gold3:#b97f34;
+  --bk-bg:#d6e7f0; --bk-card:#f8f9fd; --bk-panel:#f5f9fc; --bk-input:#ffffff;
+  --bk-line:#c9dce6; --bk-text:#1f3f52; --bk-muted:#5f7b8c;
+  --bk-side:#2a546a; --bk-side2:#244a5e; --bk-accent:#51788c; --bk-accent2:#3f6a80; --bk-soft:#b9d2df;
+  --bk-mint:#d1ebe1; --bk-mint-b:#9fd3bc; --bk-peach:#f3dccd; --bk-peach-b:#e7b99b;
 }
 
 /* helper <style> blocks should not leave an empty gap */
@@ -124,189 +239,348 @@ _THEME_CSS = """<style>
 
 /* base */
 .stApp{
-  background:
-    radial-gradient(1100px 560px at 88% -8%, rgba(227,168,87,.09), transparent 60%),
-    radial-gradient(900px 520px at -8% 108%, rgba(227,168,87,.06), transparent 60%),
-    var(--bk-bg);
+  background:linear-gradient(180deg,#dcebf3 0%,#cde1ec 45%,#bcd5e3 100%) fixed;
   color:var(--bk-text);
-  font-family:'Inter','Segoe UI',system-ui,-apple-system,sans-serif;
+  font-family:'Poppins','Segoe UI',system-ui,-apple-system,sans-serif;
 }
 h1,h2,h3,h4,h5,h6,p,label,li,button,input,textarea,td,th{
-  font-family:'Inter','Segoe UI',system-ui,-apple-system,sans-serif;
+  font-family:'Poppins','Segoe UI',system-ui,-apple-system,sans-serif;
 }
 [data-testid="stHeader"]{background:transparent;}
 #MainMenu, footer, .stDeployButton, [data-testid="stToolbar"]{visibility:hidden;}
 .block-container, [data-testid="stMainBlockContainer"]{padding-top:1.2rem;max-width:1400px;}
-h1{font-size:1.85rem !important;font-weight:650 !important;letter-spacing:-.01em;color:#f4efe6;}
-h2,h3{color:#f4efe6;font-weight:600 !important;}
-h3{font-size:1.15rem !important;}
+h1{font-size:1.75rem !important;font-weight:700 !important;letter-spacing:-.01em;color:#1f3f52 !important;}
+h2,h3,h4{color:#24485c !important;font-weight:600 !important;}
+h3{font-size:1.1rem !important;}
+[data-testid="stMain"] p, [data-testid="stMain"] li, [data-testid="stMain"] span,
+[data-testid="stMain"] [data-testid="stMarkdownContainer"]{color:var(--bk-text);}
 hr{border-color:var(--bk-line) !important;}
-[data-testid="stCaptionContainer"]{color:var(--bk-muted);}
-[data-testid="stWidgetLabel"] p, label{color:#cfc8bc;}
-:not(pre) > code{background:rgba(227,168,87,.12);color:var(--bk-gold2);border-radius:6px;}
+[data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] *{color:var(--bk-muted) !important;}
+[data-testid="stWidgetLabel"] p, label{color:#33566a;font-weight:500;}
+:not(pre) > code{background:rgba(81,120,140,.14);color:#2a546a;border-radius:6px;}
 ::-webkit-scrollbar{width:8px;height:8px;}
-::-webkit-scrollbar-thumb{background:#34343a;border-radius:8px;}
+::-webkit-scrollbar-thumb{background:#a9c3d1;border-radius:8px;}
 
-/* sidebar = dark rail */
+/* sidebar = deep teal rail */
 [data-testid="stSidebar"]{
-  background:linear-gradient(180deg,#0d0d0f,#141417);
-  border-right:1px solid var(--bk-line);
+  background:linear-gradient(180deg,#2d5a71,#244a5e);
+  border-right:none;
+  box-shadow:6px 0 24px rgba(36,74,94,.18);
 }
 [data-testid="stSidebar"] > div:first-child{background:transparent;}
-[data-testid="stSidebar"] h3{font-size:1rem !important;margin-bottom:.2rem;}
+[data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3,
+[data-testid="stSidebar"] h4{color:#ffffff !important;}
+[data-testid="stSidebar"] h3{font-size:.98rem !important;margin-bottom:.2rem;}
+[data-testid="stSidebar"] p, [data-testid="stSidebar"] li, [data-testid="stSidebar"] span,
+[data-testid="stSidebar"] [data-testid="stMarkdownContainer"]{color:#dcebf2;}
+[data-testid="stSidebar"] :not(pre) > code{background:rgba(255,255,255,.16);color:#ffffff;}
+[data-testid="stSidebar"] hr{border-color:rgba(255,255,255,.16) !important;}
 [data-testid="stSidebar"] [data-testid="stWidgetLabel"] p{
-  text-transform:uppercase;letter-spacing:.14em;font-size:.68rem;color:var(--bk-muted);
+  text-transform:uppercase;letter-spacing:.14em;font-size:.66rem;color:rgba(220,235,242,.6);font-weight:500;
 }
-[data-testid="stSidebar"] [role="radiogroup"]{gap:4px;}
-[data-testid="stSidebar"] [role="radiogroup"] > label{
-  width:100%;padding:10px 14px;border-radius:14px;border:1px solid transparent;
-  cursor:pointer;transition:all .15s ease;
+[data-testid="stSidebar"] [role="radiogroup"]{gap:2px;}
+[data-testid="stSidebar"] [role="radiogroup"] label{
+  width:100%;padding:8px 14px;border-radius:12px;border:1px solid transparent;
+  cursor:pointer;transition:all .15s ease;box-sizing:border-box;margin:0;
 }
-[data-testid="stSidebar"] [role="radiogroup"] > label > div:first-child{display:none;}
-[data-testid="stSidebar"] [role="radiogroup"] > label:hover{background:rgba(227,168,87,.08);}
-[data-testid="stSidebar"] [role="radiogroup"] > label:has(input:checked){
-  background:linear-gradient(135deg,rgba(227,168,87,.22),rgba(227,168,87,.06));
-  border-color:rgba(227,168,87,.45);
-  box-shadow:0 0 18px rgba(227,168,87,.14);
+/* hide the native radio dot (older DOM: first child div; newer DOM: first div inside the label's content div) */
+[data-testid="stSidebar"] [role="radiogroup"] label > div:first-child:not(:has(p)),
+[data-testid="stSidebar"] [role="radiogroup"] label > div > div:first-child:not(:has(p)){display:none;}
+[data-testid="stSidebar"] [role="radiogroup"] label p{color:#dcebf2;font-weight:500;font-size:.9rem;display:flex;align-items:center;gap:10px;line-height:1.25;}
+[data-testid="stSidebar"] [role="radiogroup"] label:hover{background:rgba(255,255,255,.1);}
+[data-testid="stSidebar"] [role="radiogroup"] label:has(input:checked),
+[data-testid="stSidebar"] [role="radiogroup"] label[data-selected="true"]{
+  background:#eaf3f8;box-shadow:0 4px 14px rgba(0,0,0,.18);
 }
-[data-testid="stSidebar"] [role="radiogroup"] > label:has(input:checked) p{color:var(--bk-gold2);font-weight:600;}
+[data-testid="stSidebar"] [role="radiogroup"] label:has(input:checked) p,
+[data-testid="stSidebar"] [role="radiogroup"] label[data-selected="true"] p{color:#2a546a;font-weight:600;}
+[data-testid="stSidebar"] .stButton > button{
+  background:rgba(255,255,255,.08);color:#ffffff;border:1px solid rgba(255,255,255,.35);box-shadow:none;
+}
+[data-testid="stSidebar"] .stButton > button:hover{background:rgba(255,255,255,.18);color:#ffffff;border-color:#ffffff;box-shadow:none;}
 
-/* brand + top bar */
+/* brand / profile block (sidebar) + top bar */
 .bk-orb{display:inline-block;width:14px;height:14px;border-radius:50%;
-  background:radial-gradient(circle at 35% 30%,#ffe2a8,#e3a857 55%,#8a5a22);
-  box-shadow:0 0 12px rgba(227,168,87,.7);}
+  background:radial-gradient(circle at 35% 30%,#a8d8c6,#51788c 60%,#2a546a);
+  box-shadow:0 0 0 3px rgba(81,120,140,.18);}
 .bk-orb.big{width:38px;height:38px;flex:0 0 38px;}
-.bk-brand{display:flex;align-items:center;gap:12px;padding:6px 4px 16px;margin-bottom:10px;
-  border-bottom:1px solid var(--bk-line);}
-.bk-brand b{display:block;font-size:1.1rem;color:#f4efe6;letter-spacing:.02em;}
-.bk-brand small{color:var(--bk-muted);font-size:.72rem;letter-spacing:.08em;text-transform:uppercase;}
+.bk-brand{display:flex;flex-direction:column;align-items:center;text-align:center;gap:8px;
+  padding:8px 4px 16px;margin-bottom:12px;border-bottom:1px solid rgba(255,255,255,.14);}
+.bk-avatar{width:72px;height:72px;border-radius:50%;display:grid;place-items:center;color:#2a546a;transition:transform .25s cubic-bezier(.3,1.6,.5,1);
+  background:linear-gradient(145deg,#f6fafc,#cfe2ec);border:3px solid #ffffff;
+  box-shadow:0 0 0 4px rgba(255,255,255,.22),0 8px 20px rgba(0,0,0,.2);}
+.bk-avatar:hover{transform:scale(1.07) rotate(-4deg);}
+.bk-brand b{display:block;font-size:1.02rem;color:#ffffff;letter-spacing:.01em;font-weight:600;}
+.bk-brand small{color:rgba(220,235,242,.7);font-size:.7rem;letter-spacing:.06em;}
 .bk-top{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;
-  padding:10px 16px;margin-bottom:14px;border-radius:16px;
-  background:linear-gradient(145deg,#232326,#18181b);border:1px solid var(--bk-line);
-  box-shadow:0 8px 24px rgba(0,0,0,.3);}
-.bk-top-l{display:flex;align-items:center;gap:10px;color:var(--bk-muted);font-size:.9rem;}
-.bk-top-l b{color:#f4efe6;}
+  padding:10px 18px;margin-bottom:16px;border-radius:18px;
+  background:var(--bk-card);border:1px solid var(--bk-line);
+  box-shadow:0 6px 18px rgba(42,84,106,.08);}
+.bk-top-l{display:flex;align-items:center;gap:10px;color:var(--bk-muted);font-size:.92rem;}
+.bk-top-l b{color:#1f3f52;font-weight:600;}
 .bk-top-l i{opacity:.5;font-style:normal;}
-.bk-top-r{display:flex;align-items:center;gap:12px;}
-.bk-chip{padding:4px 12px;border-radius:999px;font-size:.78rem;color:var(--bk-gold2);
-  background:rgba(227,168,87,.12);border:1px solid rgba(227,168,87,.35);}
-.bk-date{color:var(--bk-muted);font-size:.8rem;}
+.bk-top-l span:last-child{color:#2a546a;font-weight:500;}
+.bk-top-r{display:flex;align-items:center;gap:10px;}
+.bk-chip{padding:5px 14px;border-radius:999px;font-size:.76rem;font-weight:500;color:#2f6b57;
+  background:var(--bk-mint);border:1px solid var(--bk-mint-b);}
+.bk-date{display:inline-flex;align-items:center;gap:7px;padding:6px 14px;border-radius:999px;font-size:.76rem;color:var(--bk-muted);
+  background:#eef2f7;border:1px solid #cfdbe5;transition:background .2s,color .2s,border-color .2s;}
+.bk-date svg{color:var(--bk-accent);}
+.bk-date:hover{background:#e2edf4;color:#1f3f52;border-color:#9fbccd;}
+.bk-chip{transition:transform .2s ease;}
+.bk-chip:hover{transform:translateY(-1px);}
+.bk-bell{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;color:var(--bk-accent);cursor:pointer;
+  background:#eef2f7;border:1px solid #cfdbe5;transition:background .2s,color .2s,border-color .2s;}
+.bk-bell:hover{background:var(--bk-side);color:#ffffff;border-color:var(--bk-side);}
+.bk-bell svg{transform-origin:50% 12%;}
+.bk-bell:hover svg{animation:bk-ring .7s ease-in-out;}
+@keyframes bk-ring{0%,100%{transform:rotate(0)}20%{transform:rotate(16deg)}40%{transform:rotate(-14deg)}60%{transform:rotate(9deg)}80%{transform:rotate(-6deg)}}
 
 /* login hero */
 .bk-hero{text-align:center;padding:1.2rem 0 .6rem;}
 .bk-hero h1{margin:.2rem 0 .1rem;}
-.bk-hero h1 span{background:linear-gradient(135deg,#f6d08c,#d99a45);-webkit-background-clip:text;
+.bk-hero h1 span{background:linear-gradient(135deg,#2a546a,#4f9aa8);-webkit-background-clip:text;
   background-clip:text;color:transparent;-webkit-text-fill-color:transparent;}
-.bk-hero p{color:var(--bk-muted);font-size:1.02rem;margin:0;}
+.bk-hero p{color:var(--bk-muted);font-size:1rem;margin:0;}
 .bk-logo{width:68px;height:68px;margin:0 auto 10px;border-radius:50%;display:grid;place-items:center;
-  font-size:30px;background:radial-gradient(circle at 35% 30%,#3a3126,#1a1816 70%);
-  border:1px solid rgba(227,168,87,.55);
-  box-shadow:0 0 30px rgba(227,168,87,.35),inset 0 0 14px rgba(227,168,87,.18);}
+  font-size:0;line-height:0;color:transparent;transition:transform .25s cubic-bezier(.3,1.6,.5,1);
+  background:linear-gradient(145deg,#f6fafc,#cfe2ec);
+  border:3px solid #ffffff;
+  box-shadow:0 0 0 4px rgba(42,84,106,.18),0 10px 26px rgba(42,84,106,.22);}
 
-/* cards: metrics, expanders, custom */
-[data-testid="stMetric"], .bk-card{
-  background:linear-gradient(145deg,#242427,#18181b);
-  border:1px solid var(--bk-line);border-radius:20px;padding:16px 20px;
-  box-shadow:0 10px 30px rgba(0,0,0,.35),inset 0 1px 0 rgba(255,255,255,.04);
+.bk-logo::after{content:"";width:32px;height:32px;background-color:#2a546a;
+  -webkit-mask:var(--ic-bank) center/contain no-repeat;mask:var(--ic-bank) center/contain no-repeat;}
+.bk-logo:hover{transform:scale(1.07) rotate(-4deg);}
+
+/* cards: metrics (KPI tiles), expanders, custom */
+[data-testid="stHorizontalBlock"]:has([data-testid="stMetric"]){
+  background:var(--bk-panel);border-radius:20px;padding:16px;
+  box-shadow:0 6px 20px rgba(42,84,106,.08);border:1px solid rgba(255,255,255,.7);
 }
-[data-testid="stMetricLabel"] p{color:var(--bk-muted);text-transform:uppercase;letter-spacing:.08em;font-size:.7rem;}
-[data-testid="stMetricValue"]{color:var(--bk-gold2);font-weight:600;font-size:clamp(1.1rem,1.7vw,1.7rem);}
+[data-testid="stMetric"]{
+  position:relative;background:var(--bk-card);border:1.5px solid #bcdccf;border-radius:18px;
+  padding:12px 10px 12px 58px;min-height:78px;
+  display:flex;flex-direction:column-reverse;justify-content:center;gap:2px;
+  box-shadow:0 4px 12px rgba(42,84,106,.06);
+}
+[data-testid="stMetric"]{--ic:var(--ic-wallet);--ic-fg:#2f7d62;--ic-bg:var(--bk-mint);--ic-bd:var(--bk-mint-b);
+  transition:transform .2s ease,box-shadow .2s ease,border-color .2s ease;}
+[data-testid="stMetric"]::before, [data-testid="stMetric"]::after{
+  content:"";position:absolute;left:10px;top:50%;width:38px;height:38px;border-radius:11px;
+  transform:translateY(-50%);transition:transform .25s cubic-bezier(.3,1.6,.5,1),background .2s ease;
+}
+[data-testid="stMetric"]::before{background:var(--ic-bg);border:1px solid var(--ic-bd);box-sizing:border-box;}
+[data-testid="stMetric"]::after{
+  background-color:var(--ic-fg);border-radius:0;
+  -webkit-mask:var(--ic) center/20px 20px no-repeat;mask:var(--ic) center/20px 20px no-repeat;
+}
+[data-testid="stMetric"]:hover{transform:translateY(-3px);box-shadow:0 10px 22px rgba(42,84,106,.14);border-color:#9fd3bc;}
+[data-testid="stMetric"]:hover::before, [data-testid="stMetric"]:hover::after{transform:translateY(-50%) scale(1.1) rotate(-6deg);}
+[data-testid="stMetric"]:hover::before{background:#bfe3d3;}
+[data-testid="stColumn"]:nth-child(2) [data-testid="stMetric"]{--ic:var(--ic-swap);}
+[data-testid="stHorizontalBlock"]:has(> [data-testid$="olumn"]:nth-child(5)) > [data-testid$="olumn"]:nth-child(1) [data-testid="stMetric"]{--ic:var(--ic-bank);}
+[data-testid="stHorizontalBlock"]:has(> [data-testid$="olumn"]:nth-child(5)) > [data-testid$="olumn"]:nth-child(2) [data-testid="stMetric"]{--ic:var(--ic-snow);}
+[data-testid="stHorizontalBlock"]:has(> [data-testid$="olumn"]:nth-child(5)) > [data-testid$="olumn"]:nth-child(3) [data-testid="stMetric"]{--ic:var(--ic-hourglass);}
+[data-testid="stHorizontalBlock"]:has(> [data-testid$="olumn"]:nth-child(5)) > [data-testid$="olumn"]:nth-child(4) [data-testid="stMetric"]{--ic:var(--ic-wallet);}
+[data-testid="stHorizontalBlock"]:has(> [data-testid$="olumn"]:nth-child(5)) > [data-testid$="olumn"]:nth-child(5) [data-testid="stMetric"]{--ic:var(--ic-cash);}
+/* attention tile (pending transfers) in the peach tone */
+[data-testid="stHorizontalBlock"]:has(> [data-testid$="olumn"]:nth-child(5)) > [data-testid$="olumn"]:nth-child(3) [data-testid="stMetric"]{
+  background:#fcf5f0;border-color:#e9cdb9;--ic-fg:#c0693a;--ic-bg:var(--bk-peach);--ic-bd:var(--bk-peach-b);
+}
+[data-testid="stHorizontalBlock"]:has(> [data-testid$="olumn"]:nth-child(5)) > [data-testid$="olumn"]:nth-child(3) [data-testid="stMetric"]:hover::before{background:#efcdb7;}
+[data-testid="stMetricLabel"], [data-testid="stMetricLabel"] p{color:var(--bk-muted) !important;font-size:.72rem;font-weight:500;line-height:1.25;}
+[data-testid="stMetric"] [data-testid="stMarkdownContainer"], [data-testid="stMetric"] [data-testid="stMarkdownContainer"] p,
+[data-testid="stMetric"] label, [data-testid="stMetricValue"] > div{
+  white-space:normal !important;overflow:visible !important;text-overflow:clip !important;overflow-wrap:break-word;word-break:normal;
+}
+[data-testid="stMetricValue"], [data-testid="stMetricValue"] div{
+  color:#1f3f52 !important;font-weight:700;font-size:clamp(.82rem,.98vw,1.15rem);line-height:1.2;
+}
+.bk-card{
+  background:var(--bk-card);border:1px solid var(--bk-line);border-radius:18px;padding:16px 20px;
+  box-shadow:0 6px 18px rgba(42,84,106,.08);
+}
 [data-testid="stExpander"] details{
-  background:linear-gradient(145deg,#222225,#18181b);border:1px solid var(--bk-line);border-radius:16px;
+  background:var(--bk-card);border:1px solid var(--bk-line);border-radius:16px;
+  box-shadow:0 4px 14px rgba(42,84,106,.06);
 }
-[data-testid="stExpander"] summary{color:#f4efe6;}
+[data-testid="stExpander"] summary, [data-testid="stExpander"] summary *{color:#1f3f52;}
 .bk-row{display:flex;flex-wrap:wrap;gap:16px;margin:18px 0 8px;}
 .bk-row .bk-card{flex:2 1 360px;min-height:250px;}
 .bk-row .bk-card.narrow{flex:1 1 280px;}
-.bk-card-t{color:var(--bk-muted);text-transform:uppercase;letter-spacing:.1em;font-size:.72rem;margin-bottom:14px;}
-.bk-cap{text-align:center;color:var(--bk-muted);font-size:.82rem;margin-top:12px;}
+.bk-card-t{display:flex;justify-content:space-between;align-items:center;
+  color:#1f3f52;font-weight:600;font-size:.95rem;margin-bottom:14px;}
+.bk-dots{color:#9bb3c1;font-weight:700;letter-spacing:0;}
+.bk-cap{text-align:center;color:var(--bk-muted);font-size:.8rem;margin-top:12px;}
 
-/* gauge (ring) */
-.bk-gauge{width:150px;height:150px;border-radius:50%;margin:0 auto;display:grid;place-items:center;
-  background:conic-gradient(var(--bk-gold) var(--deg),#2b2b2f 0);
-  box-shadow:0 0 30px rgba(227,168,87,.16);}
-.bk-gauge-in{width:118px;height:118px;border-radius:50%;background:#18181b;display:flex;
+/* donut gauge */
+.bk-donut{display:flex;align-items:center;justify-content:center;gap:22px;flex-wrap:wrap;padding-top:4px;}
+.bk-gauge{width:140px;height:140px;border-radius:50%;display:grid;place-items:center;flex:0 0 140px;
+  background:conic-gradient(var(--bk-accent) var(--deg),var(--bk-soft) 0);}
+.bk-gauge-in{width:98px;height:98px;border-radius:50%;background:var(--bk-card);display:flex;
   flex-direction:column;align-items:center;justify-content:center;}
-.bk-gauge-in b{font-size:1.6rem;color:var(--bk-gold2);font-weight:600;}
-.bk-gauge-in span{font-size:.72rem;color:var(--bk-muted);text-transform:uppercase;letter-spacing:.1em;}
+.bk-gauge-in b{font-size:1.4rem;color:#1f3f52;font-weight:700;line-height:1.1;}
+.bk-gauge-in span{font-size:.64rem;color:var(--bk-muted);text-transform:uppercase;letter-spacing:.1em;}
+.bk-legend{display:flex;flex-direction:column;gap:10px;font-size:.8rem;color:#33566a;}
+.bk-legend span{display:flex;align-items:center;gap:8px;}
+.bk-legend i{display:inline-block;width:14px;height:14px;border-radius:3px;}
+.bk-legend i.dk{background:var(--bk-accent);}
+.bk-legend i.lt{background:var(--bk-soft);}
 
-/* pill bars */
-.bk-bars{display:flex;justify-content:space-around;align-items:flex-end;gap:10px;padding-top:4px;}
-.bk-bar{display:flex;flex-direction:column;align-items:center;gap:6px;min-width:0;flex:1;}
-.bk-bar-val{font-size:.78rem;color:var(--bk-gold2);}
-.bk-bar-track{width:22px;height:150px;border-radius:999px;background:#2a2a2e;display:flex;align-items:flex-end;}
-.bk-bar-fill{width:100%;border-radius:999px;background:linear-gradient(180deg,#f3c77a,#c98a3c);
-  box-shadow:0 0 14px rgba(227,168,87,.35);}
-.bk-bar-lbl{font-size:.7rem;color:var(--bk-muted);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+/* horizontal bars */
+.bk-hbars{display:flex;flex-direction:column;gap:10px;padding-top:2px;}
+.bk-hrow{display:flex;align-items:center;gap:12px;}
+.bk-hl{flex:0 0 32%;max-width:32%;font-size:.76rem;color:#33566a;font-weight:500;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.bk-hb{flex:1 1 auto;display:flex;align-items:center;gap:8px;min-width:0;}
+.bk-hf{height:9px;border-radius:999px;background:var(--bk-accent);min-width:6px;}
+.bk-hv{font-size:.74rem;color:#1f3f52;font-weight:600;white-space:nowrap;}
+
+/* area / line chart */
+.bk-line svg{width:100%;height:auto;display:block;}
 
 /* inputs */
 div[data-baseweb="input"], div[data-baseweb="base-input"], div[data-baseweb="select"] > div,
 [data-testid="stTextArea"] textarea{
-  background:var(--bk-input) !important;border-color:#2d2d31 !important;border-radius:12px !important;
+  background:var(--bk-input) !important;border-color:#c3d6e1 !important;border-radius:10px !important;
   color:var(--bk-text) !important;
 }
 div[data-baseweb="input"] input, div[data-baseweb="select"] input, div[data-baseweb="select"] div{color:var(--bk-text);}
+div[data-baseweb="select"] svg{fill:var(--bk-accent);}
 div[data-baseweb="input"]:focus-within, div[data-baseweb="select"] > div:focus-within{
-  border-color:var(--bk-gold) !important;box-shadow:0 0 0 1px rgba(227,168,87,.5);
+  border-color:var(--bk-accent) !important;box-shadow:0 0 0 1px rgba(81,120,140,.5);
 }
-div[data-baseweb="popover"] ul, div[data-baseweb="menu"]{background:#1d1d20 !important;}
+[data-testid="stNumberInput"] button{background:transparent;color:var(--bk-accent);border-color:transparent;}
+div[data-baseweb="popover"] ul, div[data-baseweb="menu"]{background:#ffffff !important;}
 li[role="option"]{color:var(--bk-text);}
-li[role="option"]:hover, li[aria-selected="true"]{background:rgba(227,168,87,.14) !important;}
+li[role="option"]:hover, li[aria-selected="true"]{background:rgba(81,120,140,.14) !important;}
+[data-testid="stFileUploaderDropzone"]{background:#f1f7fa;border:1px dashed #9fbccd;border-radius:12px;}
+[data-testid="stFileUploaderDropzone"] *{color:#33566a;}
+[data-testid="stFileUploaderDropzone"] button{background:#ffffff;color:#2a546a;border:1px solid #9fbccd;}
+/* slider: Streamlit paints it in its default primary red; rotate that hue to the teal accent */
+[data-testid="stSlider"] [role="group"] > div > div:nth-child(-n+2){filter:hue-rotate(198deg) saturate(.42) brightness(.72);}
+[data-testid="stSlider"] [data-baseweb="slider"] > div:nth-child(-n+2){filter:hue-rotate(198deg) saturate(.42) brightness(.72);}
+[data-testid="stCheckbox"] [data-baseweb="checkbox"] > div:first-child{border-color:var(--bk-accent);}
+[data-testid="stCheckbox"] [data-baseweb="checkbox"]:has(input:checked) > div:first-child{background:var(--bk-side) !important;border-color:var(--bk-side) !important;}
+[data-testid="stMain"] [role="radiogroup"] label:has(input:checked) > div:first-child:not(:has(p)),
+[data-testid="stMain"] [role="radiogroup"] label:has(input:checked) > div > div:first-child:not(:has(p)),
+[data-testid="stMain"] [data-testid="stRadioOption"][data-selected="true"] > div > div:first-child:not(:has(p)){
+  background:var(--bk-side) !important;border-color:var(--bk-side) !important;
+}
 
 /* buttons */
 .stButton > button, .stDownloadButton > button, .stFormSubmitButton > button{
-  border-radius:12px;border:1px solid rgba(227,168,87,.35);background:#1c1c1f;color:var(--bk-gold2);
-  font-weight:600;transition:all .15s ease;
+  border-radius:12px;border:1px solid #9fbccd;background:#ffffff;color:#2a546a;
+  font-weight:600;transition:all .15s ease;box-shadow:0 2px 8px rgba(42,84,106,.08);
 }
-.stButton > button p, .stDownloadButton > button p{color:inherit;}
+.stButton > button *, .stDownloadButton > button *, .stFormSubmitButton > button *{color:inherit !important;}
 .stButton > button:hover, .stDownloadButton > button:hover{
-  border-color:var(--bk-gold);box-shadow:0 0 16px rgba(227,168,87,.25);color:#fff;
+  border-color:var(--bk-accent);background:#eef5f9;color:#1f3f52;box-shadow:0 4px 14px rgba(42,84,106,.16);
 }
 .stButton > button[kind="primary"], .stButton > button[data-testid="stBaseButton-primary"],
 .stFormSubmitButton > button[kind="primary"]{
-  background:linear-gradient(135deg,#f3c77a,#d99a45);color:#1a1405;border:none;
-  box-shadow:0 6px 18px rgba(217,154,69,.28);
+  background:linear-gradient(135deg,#3f7089,#2a546a);color:#ffffff;border:none;
+  box-shadow:0 6px 16px rgba(42,84,106,.28);
 }
+.stButton > button[kind="primary"] *, .stButton > button[data-testid="stBaseButton-primary"] *,
+.stFormSubmitButton > button[kind="primary"] *{color:#ffffff !important;}
 .stButton > button[kind="primary"]:hover, .stButton > button[data-testid="stBaseButton-primary"]:hover{
-  color:#1a1405;box-shadow:0 8px 24px rgba(217,154,69,.45);filter:brightness(1.05);
+  color:#ffffff;background:linear-gradient(135deg,#477a95,#2f5e76);box-shadow:0 8px 22px rgba(42,84,106,.38);
 }
 
-/* tabs as pills */
-.stTabs [data-baseweb="tab-list"]{
-  gap:6px;background:#17171a;padding:5px;border-radius:14px;border:1px solid var(--bk-line);
+/* tabs as pills (older + newer Streamlit DOM) */
+.stTabs [data-baseweb="tab-list"], .stTabs [role="tablist"]{
+  gap:6px;background:#e3eef4;padding:5px;border-radius:14px;border:1px solid var(--bk-line);
 }
-.stTabs [data-baseweb="tab"]{height:auto;padding:8px 16px;border-radius:10px;color:var(--bk-muted);background:transparent;}
-.stTabs [aria-selected="true"]{
-  background:linear-gradient(135deg,rgba(227,168,87,.24),rgba(227,168,87,.08));color:var(--bk-gold2) !important;
+.stTabs [data-baseweb="tab"], .stTabs [role="tab"]{
+  height:auto;padding:8px 16px;border-radius:10px;color:var(--bk-muted);background:transparent;position:relative;
 }
-.stTabs [data-baseweb="tab-highlight"], .stTabs [data-baseweb="tab-border"]{display:none;}
+.stTabs [data-baseweb="tab"] p, .stTabs [role="tab"] p{color:inherit;font-weight:500;}
+.stTabs [aria-selected="true"]{background:var(--bk-side);color:#ffffff !important;box-shadow:0 4px 12px rgba(42,84,106,.25);}
+.stTabs [aria-selected="true"] p{color:#ffffff !important;}
+.stTabs [data-baseweb="tab-highlight"], .stTabs [data-baseweb="tab-border"],
+.stTabs .react-aria-SelectionIndicator{display:none !important;}
+
+/* card / chart hover */
+.bk-card{transition:transform .2s ease,box-shadow .2s ease;}
+.bk-card:hover{transform:translateY(-3px);box-shadow:0 12px 26px rgba(42,84,106,.14);}
+.bk-dots{cursor:pointer;border-radius:8px;padding:0 6px;transition:background .2s,color .2s;}
+.bk-dots:hover{background:#e3eef4;color:var(--bk-side);}
+.bk-hrow .bk-hf{transition:filter .2s ease,transform .2s ease;transform-origin:left center;}
+.bk-hrow:hover .bk-hf{filter:brightness(1.2);transform:scaleY(1.35);}
+.bk-hrow:hover .bk-hl{color:#1f3f52;}
+.bk-gauge{transition:transform .3s cubic-bezier(.3,1.6,.5,1);}
+.bk-donut:hover .bk-gauge{transform:scale(1.04) rotate(8deg);}
+
+/* icons: Material icons rendered by Streamlit in labels (tabs, nav, buttons, alerts) */
+[aria-label$=" icon"][translate="no"], [data-testid="stIconMaterial"]{
+  transition:transform .22s cubic-bezier(.3,1.6,.5,1),background .2s ease,color .2s ease;
+  font-size:1.18em;vertical-align:-.22em;margin-right:.1em;
+}
+/* sidebar nav: icon in a rounded tile that lights up */
+[data-testid="stSidebar"] [role="radiogroup"] label [aria-label$=" icon"][translate="no"]{
+  display:inline-grid !important;place-items:center;flex:0 0 30px;width:30px;height:30px;font-size:1.05rem;border-radius:10px;margin:0;
+  vertical-align:middle;background:rgba(255,255,255,.12);color:#ffffff;
+}
+[data-testid="stSidebar"] [role="radiogroup"] label:hover [aria-label$=" icon"][translate="no"]{
+  background:rgba(255,255,255,.26);transform:scale(1.12) rotate(-7deg);
+}
+[data-testid="stSidebar"] [role="radiogroup"] label:has(input:checked) [aria-label$=" icon"][translate="no"],
+[data-testid="stSidebar"] [role="radiogroup"] label[data-selected="true"] [aria-label$=" icon"][translate="no"]{
+  background:var(--bk-side);color:#ffffff;
+}
+[data-testid="stSidebar"] h3 [aria-label$=" icon"][translate="no"]{
+  display:inline-grid !important;place-items:center;width:28px;height:28px;border-radius:9px;margin-right:8px;
+  background:rgba(255,255,255,.14);color:#ffffff;font-size:1rem;vertical-align:middle;
+}
+/* tabs, buttons, expanders, alerts */
+.stTabs [role="tab"]:hover [aria-label$=" icon"][translate="no"], .stTabs [data-baseweb="tab"]:hover [aria-label$=" icon"][translate="no"]{
+  transform:scale(1.25) rotate(-8deg);
+}
+.stTabs [role="tab"] [aria-label$=" icon"][translate="no"]{color:var(--bk-accent);}
+.stTabs [aria-selected="true"] [aria-label$=" icon"][translate="no"]{color:#ffffff;}
+.stButton > button:hover [aria-label$=" icon"][translate="no"], .stFormSubmitButton > button:hover [aria-label$=" icon"][translate="no"]{
+  transform:scale(1.25) rotate(-8deg);
+}
+.stDownloadButton > button:hover [aria-label$=" icon"][translate="no"]{transform:translateY(3px) scale(1.15);}
+[data-testid="stExpander"] summary:hover [aria-label$=" icon"][translate="no"]{transform:scale(1.2) rotate(-8deg);}
+[data-testid="stExpander"] summary [aria-label$=" icon"][translate="no"]{color:var(--bk-accent);}
+[data-testid="stAlert"] [aria-label$=" icon"][translate="no"]{font-size:1.3em;margin-right:.25em;}
+[data-testid="stMain"] h1 [aria-label$=" icon"][translate="no"], [data-testid="stMain"] h3 [aria-label$=" icon"][translate="no"]{color:var(--bk-accent);}
+@media (prefers-reduced-motion:reduce){
+  .bk-card, [data-testid="stMetric"], [data-testid="stMetric"]::before, [data-testid="stMetric"]::after, .bk-avatar, .bk-logo,
+  [aria-label$=" icon"][translate="no"]{transition:none !important;animation:none !important;}
+  .bk-bell:hover svg{animation:none !important;}
+}
 
 /* tables + alerts */
-[data-testid="stDataFrame"]{border:1px solid var(--bk-line);border-radius:16px;overflow:hidden;}
+[data-testid="stDataFrame"]{border:1px solid var(--bk-line);border-radius:16px;overflow:hidden;
+  background:#ffffff;box-shadow:0 4px 14px rgba(42,84,106,.06);}
 [data-testid="stAlert"]{border-radius:14px;}
-</style>"""
+</style>""".replace("/*__ICON_VARS__*/", _icon_vars_css())
 
-# Only used when the Streamlit base theme is not dark (no .streamlit/config.toml):
-# darkens the canvas-based tables so they match the page.
-_LIGHT_BASE_FALLBACK_CSS = (
+# Only used when the Streamlit base theme is dark (e.g. a dark .streamlit/config.toml):
+# lightens the canvas-based tables so they match the light page.
+_DARK_BASE_FALLBACK_CSS = (
     '<style>[data-testid="stDataFrame"]{filter:invert(.9) hue-rotate(180deg);}</style>'
 )
 
 
 def inject_theme() -> None:
-    """Apply the dark + gold theme. Styling only."""
+    """Apply the soft-blue + deep-teal dashboard theme. Styling only."""
+    _install_icon_labels()
     st.markdown(_THEME_CSS, unsafe_allow_html=True)
     try:
         base = st.get_option("theme.base")
     except Exception:
         base = None
-    if base != "dark":
-        st.markdown(_LIGHT_BASE_FALLBACK_CSS, unsafe_allow_html=True)
+    if base == "dark":
+        st.markdown(_DARK_BASE_FALLBACK_CSS, unsafe_allow_html=True)
 
 
 def _sidebar_brand() -> None:
     st.markdown(
-        '<div class="bk-brand"><span class="bk-orb big"></span>'
+        '<div class="bk-brand"><div class="bk-avatar">' + _svg("bank", 34, sw=1.8) + '</div>'
         '<div><b>BankOS</b><small>Enterprise Banking</small></div></div>',
         unsafe_allow_html=True,
     )
@@ -315,23 +589,31 @@ def _sidebar_brand() -> None:
 def _topbar(section: str, role: str) -> None:
     st.markdown(
         '<div class="bk-top"><div class="bk-top-l"><span class="bk-orb"></span>'
-        f'<b>BankOS</b><i>/</i><span>{html_escape(section)}</span></div>'
+        f'<b>BankOS</b><i>/</i><span>{html_escape(_EMOJI_RE.sub("", section).strip())}</span></div>'
         f'<div class="bk-top-r"><span class="bk-chip">{html_escape(role)}</span>'
-        f'<span class="bk-date">{datetime.now():%a, %d %b %Y}</span></div></div>',
+        f'<span class="bk-date">{_svg("calendar", 14)}{datetime.now():%a, %d %b %Y}</span>'
+        f'<span class="bk-bell" title="Notifications">{_svg("bell", 16)}</span></div></div>',
         unsafe_allow_html=True,
     )
 
 
 def _card(title: str, body: str, narrow: bool = False) -> str:
     cls = "bk-card narrow" if narrow else "bk-card"
-    return f'<div class="{cls}"><div class="bk-card-t">{html_escape(title)}</div>{body}</div>'
+    return (
+        f'<div class="{cls}"><div class="bk-card-t"><span>{html_escape(title)}</span>'
+        f'<span class="bk-dots">⋮</span></div>{body}</div>'
+    )
 
 
-def _gauge_html(pct: float, title: str, caption: str) -> str:
+def _gauge_html(pct: float, title: str, caption: str, rest_label: str = "Remaining") -> str:
     pct = max(0.0, min(100.0, float(pct)))
     return (
+        '<div class="bk-donut">'
         f'<div class="bk-gauge" style="--deg:{pct * 3.6:.1f}deg"><div class="bk-gauge-in">'
         f'<b>{pct:.0f}%</b><span>{html_escape(title)}</span></div></div>'
+        '<div class="bk-legend">'
+        f'<span><i class="dk"></i>{html_escape(title.title())}</span>'
+        f'<span><i class="lt"></i>{html_escape(rest_label)}</span></div></div>'
         f'<div class="bk-cap">{html_escape(caption)}</div>'
     )
 
@@ -346,18 +628,88 @@ def _short_num(v: float) -> str:
 
 
 def _bars_html(items: list) -> str:
-    """items: list of (label, value, display_text)."""
+    """items: list of (label, value, display_text). Rendered as horizontal bars."""
     peak = max((abs(float(v)) for _, v, _ in items), default=0) or 1
-    cols = []
+    rows = []
     for label, val, disp in items:
-        h = max(6, round(abs(float(val)) / peak * 100))
-        cols.append(
-            '<div class="bk-bar">'
-            f'<div class="bk-bar-val">{html_escape(str(disp))}</div>'
-            f'<div class="bk-bar-track"><div class="bk-bar-fill" style="height:{h}%"></div></div>'
-            f'<div class="bk-bar-lbl">{html_escape(str(label))}</div></div>'
+        w = max(4, round(abs(float(val)) / peak * 100))
+        rows.append(
+            '<div class="bk-hrow">'
+            f'<div class="bk-hl" title="{html_escape(str(label))}">{html_escape(str(label))}</div>'
+            '<div class="bk-hb">'
+            f'<div class="bk-hf" style="width:{w * 0.78:.1f}%"></div>'
+            f'<span class="bk-hv">{html_escape(str(disp))}</span></div></div>'
         )
-    return '<div class="bk-bars">' + "".join(cols) + "</div>"
+    return '<div class="bk-hbars">' + "".join(rows) + "</div>"
+
+
+def _line_html(items: list) -> str:
+    """items: list of (label, value, display_text). Smooth area chart with a peak badge."""
+    if len(items) < 2:
+        return _bars_html(items)
+    W, H = 520, 200
+    pl, pr, pt, pb = 40, 30, 34, 30
+    pw, ph = W - pl - pr, H - pt - pb
+    vals = [abs(float(v)) for _, v, _ in items]
+    top = (max(vals) or 1) * 1.1
+    n = len(items)
+    pts = [(pl + pw * i / (n - 1), pt + ph * (1 - v / top)) for i, v in enumerate(vals)]
+    base_y = pt + ph
+
+    def clamp_y(y: float) -> float:
+        return max(pt - 6, min(base_y, y))
+
+    d = f"M{pts[0][0]:.1f},{pts[0][1]:.1f}"
+    for i in range(n - 1):
+        p0 = pts[i - 1] if i > 0 else pts[i]
+        p1, p2 = pts[i], pts[i + 1]
+        p3 = pts[i + 2] if i + 2 < n else p2
+        c1 = (p1[0] + (p2[0] - p0[0]) / 6, clamp_y(p1[1] + (p2[1] - p0[1]) / 6))
+        c2 = (p2[0] - (p3[0] - p1[0]) / 6, clamp_y(p2[1] - (p3[1] - p1[1]) / 6))
+        d += f" C{c1[0]:.1f},{c1[1]:.1f} {c2[0]:.1f},{c2[1]:.1f} {p2[0]:.1f},{p2[1]:.1f}"
+    area = f"{d} L{pts[-1][0]:.1f},{base_y:.1f} L{pts[0][0]:.1f},{base_y:.1f} Z"
+
+    parts = [
+        f'<svg viewBox="0 0 {W} {H}" xmlns="http://www.w3.org/2000/svg" role="img">',
+        '<defs><linearGradient id="bkArea" x1="0" y1="0" x2="0" y2="1">'
+        '<stop offset="0" stop-color="#7fc4aa" stop-opacity=".55"/>'
+        '<stop offset="1" stop-color="#7fc4aa" stop-opacity=".04"/></linearGradient></defs>',
+    ]
+    for k in range(4):
+        gy = pt + ph * k / 3
+        parts.append(
+            f'<line x1="{pl}" y1="{gy:.1f}" x2="{W - pr}" y2="{gy:.1f}" stroke="#b9cdd8" '
+            'stroke-width="1" stroke-dasharray="3 4"/>'
+            f'<text x="{pl - 8}" y="{gy + 3.5:.1f}" text-anchor="end" font-size="10" fill="#6f8a9a">'
+            f'{html_escape(_short_num(top * (1 - k / 3)))}</text>'
+        )
+    parts.append(f'<path d="{area}" fill="url(#bkArea)"/>')
+    parts.append(
+        f'<path d="{d}" fill="none" stroke="#5aa58d" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>'
+    )
+    peak_i = max(range(n), key=lambda i: vals[i])
+    for i, (x, y) in enumerate(pts):
+        if i == peak_i:
+            continue
+        parts.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="3" fill="#ffffff" stroke="#5aa58d" stroke-width="1.6"/>')
+    px, py = pts[peak_i]
+    disp = str(items[peak_i][2])
+    bw = 8 * len(disp) + 16
+    bx = max(pl, min(W - pr - bw, px - bw / 2))
+    by = py - 30 if py - 30 >= 2 else py + 10
+    parts.append(
+        f'<rect x="{bx:.1f}" y="{by:.1f}" width="{bw}" height="20" rx="5" fill="#2a546a"/>'
+        f'<text x="{bx + bw / 2:.1f}" y="{by + 13.5:.1f}" text-anchor="middle" font-size="10.5" '
+        f'font-weight="600" fill="#ffffff">{html_escape(disp)}</text>'
+        f'<circle cx="{px:.1f}" cy="{py:.1f}" r="4.5" fill="#2a546a" stroke="#ffffff" stroke-width="2"/>'
+    )
+    for i, (x, _) in enumerate(pts):
+        parts.append(
+            f'<text x="{x:.1f}" y="{H - 9}" text-anchor="middle" font-size="10" fill="#6f8a9a">'
+            f'{html_escape(str(items[i][0]))}</text>'
+        )
+    parts.append("</svg>")
+    return '<div class="bk-line">' + "".join(parts) + "</div>"
 
 
 def _render_admin_visuals(conn: sqlite3.Connection, total_accs: int, frozen: int) -> None:
@@ -365,7 +717,11 @@ def _render_admin_visuals(conn: sqlite3.Connection, total_accs: int, frozen: int
         rows = conn.execute("SELECT acc_type, COUNT(*) AS cnt FROM accounts GROUP BY acc_type").fetchall()
         items = [(str(r["acc_type"]).replace("_", " ").title(), r["cnt"], str(r["cnt"])) for r in rows]
         pct = (frozen / total_accs * 100) if total_accs else 0
-        cards = [_card("Frozen Accounts", _gauge_html(pct, "frozen", f"{frozen} of {total_accs} accounts"), narrow=True)]
+        cards = [_card(
+            "Frozen Accounts",
+            _gauge_html(pct, "frozen", f"{frozen} of {total_accs} accounts", rest_label="Active"),
+            narrow=True,
+        )]
         if items:
             cards.append(_card("Accounts by Type", _bars_html(items)))
         st.markdown(f'<div class="bk-row">{"".join(cards)}</div>', unsafe_allow_html=True)
@@ -380,7 +736,10 @@ def _render_customer_visuals(conn: sqlite3.Connection, logs, row, acc_num: int, 
             used, lim = row["credit_used"] or 0, row["credit_card_limit"]
             cards.append(_card(
                 "Credit Utilization",
-                _gauge_html(used / lim * 100, "used", f"{format_money(used, currency)} of {format_money(lim, currency)}"),
+                _gauge_html(
+                    used / lim * 100, "used", f"{format_money(used, currency)} of {format_money(lim, currency)}",
+                    rest_label="Available",
+                ),
                 narrow=True,
             ))
         elif row["vault_no"]:
@@ -388,7 +747,7 @@ def _render_customer_visuals(conn: sqlite3.Connection, logs, row, acc_num: int, 
             pct = vb / (vb + bal) * 100 if (vb + bal) else 0
             cards.append(_card(
                 "Vault Reserve",
-                _gauge_html(pct, "in vault", f"{format_money(vb, currency)} secured"),
+                _gauge_html(pct, "in vault", f"{format_money(vb, currency)} secured", rest_label="In account"),
                 narrow=True,
             ))
 
@@ -400,7 +759,7 @@ def _render_customer_visuals(conn: sqlite3.Connection, logs, row, acc_num: int, 
             if d.get("amount") is not None
         ]
         if items:
-            cards.append(_card("Recent Activity", _bars_html(items)))
+            cards.append(_card("Recent Activity", _line_html(items)))
         if cards:
             st.markdown(f'<div class="bk-row">{"".join(cards)}</div>', unsafe_allow_html=True)
     except Exception:
