@@ -1,9 +1,10 @@
 """
 app.py — BankOS Enterprise Web Application
+PRACTICE PROJECT — demo only. Do NOT enter real personal, banking or financial data.
 Full Streamlit UI for BankOS v3/v4.
 
 Features:
-- Role-based Authentication: Bank Admin (bankadmin/bankadmin), Customer Login, Self-service Password Reset.
+- Role-based Authentication: Bank Admin (bankadmin/bankadmin), Customer Login, Self-service Password Reset (login page + in-portal sidebar entry for both roles).
 - Practice Project Credentials Display: easily inspect demo customer passwords and original passwords.
 - Admin Portal: Dashboard Overview, Comprehensive Account CRUD (Create, Freeze, Convert, Daily Limit, Delete),
   Vault Management, Pending Transfers Approval/Rejection Queue, Multi-Log Audit Viewer,
@@ -201,6 +202,7 @@ _SVG_ICONS = {
     "cash": '<rect width="20" height="12" x="2" y="6" rx="2"/><circle cx="12" cy="12" r="2"/><path d="M6 12h.01M18 12h.01"/>',
     "swap": '<path d="M8 3 4 7l4 4"/><path d="M4 7h16"/><path d="m16 21 4-4-4-4"/><path d="M20 17H4"/>',
     "calendar": '<path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/>',
+    "alert": '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
     "bell": '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>',
 }
 
@@ -225,6 +227,10 @@ def _icon_vars_css() -> str:
 _THEME_CSS = """<style>
 @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap');
 /*__ICON_VARS__*/
+
+/* overall UI scale: ~90% (same look as 90% browser zoom for text, rem-based spacing and widgets).
+   Change 90% to 100% to go back to the original size, or 85% to go smaller still. */
+html{font-size:90% !important;}
 
 :root{
   --bk-bg:#d6e7f0; --bk-card:#f8f9fd; --bk-panel:#f5f9fc; --bk-input:#ffffff;
@@ -404,7 +410,7 @@ hr{border-color:var(--bk-line) !important;}
   background:var(--bk-card);border:1px solid var(--bk-line);border-radius:16px;
   box-shadow:0 4px 14px rgba(42,84,106,.06);
 }
-[data-testid="stExpander"] summary, [data-testid="stExpander"] summary *{color:#1f3f52;}
+[data-testid="stExpander"] summary, [data-testid="stExpander"] summary *{color:#ffffff;}
 .bk-row{display:flex;flex-wrap:wrap;gap:16px;margin:18px 0 8px;}
 .bk-row .bk-card{flex:2 1 360px;min-height:250px;}
 .bk-row .bk-card.narrow{flex:1 1 280px;}
@@ -450,7 +456,10 @@ div[data-baseweb="select"] svg{fill:var(--bk-accent);}
 div[data-baseweb="input"]:focus-within, div[data-baseweb="select"] > div:focus-within{
   border-color:var(--bk-accent) !important;box-shadow:0 0 0 1px rgba(81,120,140,.5);
 }
-[data-testid="stNumberInput"] button{background:transparent;color:var(--bk-accent);border-color:transparent;}
+[data-testid="stNumberInput"] button{background:transparent;color:#ffffff;border-color:transparent;}
+[data-testid="stNumberInput"] button svg, [data-testid="stTextInput"] button, [data-testid="stTextInput"] button svg{color:#ffffff !important;fill:#ffffff;}
+button[aria-label*="password" i], button[aria-label*="password" i] *, [data-testid="stTextInput"] [role="button"], [data-testid="stTextInput"] [role="button"] *, [data-testid="stTextInput"] div[data-baseweb="input"] svg, [data-testid="stTextInput"] div[data-baseweb="input"] svg path{color:#ffffff !important;fill:#ffffff !important;-webkit-text-fill-color:#ffffff !important;opacity:1 !important;}
+[data-testid="InputInstructions"]{display:none !important;}
 div[data-baseweb="popover"] ul, div[data-baseweb="menu"]{background:#ffffff !important;}
 li[role="option"]{color:var(--bk-text);}
 li[role="option"]:hover, li[aria-selected="true"]{background:rgba(81,120,140,.14) !important;}
@@ -501,6 +510,16 @@ li[role="option"]:hover, li[aria-selected="true"]{background:rgba(81,120,140,.14
 .stTabs [data-baseweb="tab-highlight"], .stTabs [data-baseweb="tab-border"],
 .stTabs .react-aria-SelectionIndicator{display:none !important;}
 
+/* practice-project warning banner (amber-orange) */
+.bk-warn{display:flex;align-items:center;gap:12px;padding:10px 16px;margin:0 0 14px;border-radius:14px;
+  background:#fce1ca;border:1px solid #e59a62;color:#6b2e0b;font-size:.82rem;line-height:1.45;
+  box-shadow:0 4px 12px rgba(194,65,12,.16);transition:box-shadow .2s ease,transform .2s ease;}
+.bk-warn:hover{box-shadow:0 8px 18px rgba(194,65,12,.26);transform:translateY(-1px);}
+.bk-warn-ic{flex:0 0 32px;width:32px;height:32px;border-radius:10px;display:grid;place-items:center;
+  background:#f8f9fd;border:1px solid #e59a62;color:#c2410c;transition:transform .25s cubic-bezier(.3,1.6,.5,1);}
+.bk-warn:hover .bk-warn-ic{transform:scale(1.1) rotate(-6deg);}
+.bk-warn b{color:#4a1d04;font-weight:600;}
+
 /* card / chart hover */
 .bk-card{transition:transform .2s ease,box-shadow .2s ease;}
 .bk-card:hover{transform:translateY(-3px);box-shadow:0 12px 26px rgba(42,84,106,.14);}
@@ -544,7 +563,7 @@ li[role="option"]:hover, li[aria-selected="true"]{background:rgba(81,120,140,.14
 }
 .stDownloadButton > button:hover [aria-label$=" icon"][translate="no"]{transform:translateY(3px) scale(1.15);}
 [data-testid="stExpander"] summary:hover [aria-label$=" icon"][translate="no"]{transform:scale(1.2) rotate(-8deg);}
-[data-testid="stExpander"] summary [aria-label$=" icon"][translate="no"]{color:var(--bk-accent);}
+[data-testid="stExpander"] summary [aria-label$=" icon"][translate="no"]{color:#ffffff;}
 [data-testid="stAlert"] [aria-label$=" icon"][translate="no"]{font-size:1.3em;margin-right:.25em;}
 [data-testid="stMain"] h1 [aria-label$=" icon"][translate="no"], [data-testid="stMain"] h3 [aria-label$=" icon"][translate="no"]{color:var(--bk-accent);}
 @media (prefers-reduced-motion:reduce){
@@ -591,8 +610,18 @@ def _topbar(section: str, role: str) -> None:
         '<div class="bk-top"><div class="bk-top-l"><span class="bk-orb"></span>'
         f'<b>BankOS</b><i>/</i><span>{html_escape(_EMOJI_RE.sub("", section).strip())}</span></div>'
         f'<div class="bk-top-r"><span class="bk-chip">{html_escape(role)}</span>'
-        f'<span class="bk-date">{_svg("calendar", 14)}{datetime.now():%a, %d %b %Y}</span>'
-        f'<span class="bk-bell" title="Notifications">{_svg("bell", 16)}</span></div></div>',
+        f'<span class="bk-date">{_svg("calendar", 14)}{datetime.now():%a, %d %b %Y}</span></div></div>',
+        unsafe_allow_html=True,
+    )
+
+
+def _practice_banner() -> None:
+    """Persistent notice: this is a demo with fictional data."""
+    st.markdown(
+        '<div class="bk-warn" role="alert"><span class="bk-warn-ic">' + _svg("alert", 18) + '</span>'
+        '<span><b>Practice project — do not enter real data.</b> This app is for demonstration only. '
+        'Never type real personal, banking or financial information, or real passwords; '
+        'all accounts, balances and credentials shown here are fictional.</span></div>',
         unsafe_allow_html=True,
     )
 
@@ -872,6 +901,49 @@ def render_login() -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+#  Shared: in-portal password reset (admin + customer)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def render_reset_password_panel(conn: sqlite3.Connection, is_admin: bool) -> None:
+    """Reset the *logged-in* user's own password by verifying their security answer.
+
+    Uses the same backend calls as the login-page reset (get_security_question /
+    execute_password_reset), so no new storage code is needed. The identity comes
+    from the session, so a logged-in user can only reset their own password.
+    """
+    ident = str(st.session_state.identifier) if is_admin else int(st.session_state.identifier)
+    kind = "admin" if is_admin else "customer"
+
+    st.title("Reset Password")
+    st.caption("Verify your security question answer to set a new password for your own account.")
+
+    q_res = get_security_question(conn, ident, is_admin=is_admin)
+    if q_res["status"] != "success":
+        st.warning(q_res["message"])
+        return
+
+    st.markdown(f"**Security Question:** :blue[{q_res['data']['security_question']}]")
+
+    with st.form(f"reset_form_{kind}", clear_on_submit=True):
+        sec_ans = st.text_input("Your Security Answer", type="password")
+        new_pw = st.text_input("New Password", type="password")
+        confirm_pw = st.text_input("Confirm New Password", type="password")
+        submitted = st.form_submit_button("Execute Password Reset", type="primary")
+
+    if submitted:
+        if not sec_ans or not new_pw or not confirm_pw:
+            st.warning("Please fill in your security answer, the new password and its confirmation.")
+        elif new_pw != confirm_pw:
+            st.error("The new password and its confirmation do not match.")
+        else:
+            res = execute_password_reset(conn, ident, sec_ans, new_pw, is_admin=is_admin)
+            if res["status"] == "success":
+                st.success(f"{res['message']} Use your new password the next time you log in.")
+            else:
+                st.error(res["message"])
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 #  Admin Portal
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -891,6 +963,7 @@ def render_admin_portal() -> None:
                 "📜 Audit & Transaction Logs",
                 "🗄️ Database Management",
                 "📄 Generate Statements",
+                "🔑 Reset Password",
             ],
         )
         st.markdown("---")
@@ -1281,6 +1354,9 @@ def render_admin_portal() -> None:
             except Exception as e:
                 st.error(f"Failed to generate statement: {e}")
 
+    elif menu == "🔑 Reset Password":
+        render_reset_password_panel(conn, is_admin=True)
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  Customer Portal
@@ -1319,6 +1395,7 @@ def render_customer_portal() -> None:
             "🏛️ Government Tax Settlement",
             "📜 Recent Transactions",
             "📄 PDF Statement",
+            "🔑 Reset Password",
         ])
 
         menu = st.radio("Navigation", nav_options)
@@ -1698,6 +1775,9 @@ def render_customer_portal() -> None:
             except Exception as e:
                 st.error(f"Error generating statement: {e}")
 
+    elif menu == "🔑 Reset Password":
+        render_reset_password_panel(conn, is_admin=False)
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  Application Root
@@ -1706,6 +1786,12 @@ def render_customer_portal() -> None:
 def main() -> None:
     st.set_page_config(page_title="BankOS Enterprise", page_icon="🏦", layout="wide")
     inject_theme()
+    # =====================================================================================
+    # ── DISABLED: "Practice project — do not enter real data" warning banner ──
+    # Commented out so the amber warning box no longer appears anywhere in the app.
+    # To show it again, remove the leading '#' from the line below.
+    # ======================================================================================
+    # _practice_banner()
     init_dbs()
 
     if "logged_in" not in st.session_state:
