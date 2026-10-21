@@ -1,4 +1,4 @@
-# BankOS v4 — Enterprise Financial System
+# BankOS — Enterprise Financial System
 
 A practice banking platform that keeps **all operational and audit data in one SQLite database** (`data/bank.db`) and exposes it through two front ends built on the same core modules:
 
