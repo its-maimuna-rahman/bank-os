@@ -8,7 +8,7 @@ import re
 import sqlite3
 from typing import Collection
 
-from utils_currency import SUPPORTED, parse_amount_input
+from utils.currency import SUPPORTED, parse_amount_input
 
 # ── constants (re-exported so callers need only import this module) ────────────
 

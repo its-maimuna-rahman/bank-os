@@ -18,7 +18,8 @@ import sqlite3
 from pathlib import Path
 from typing import NamedTuple
 
-from utils_currency import (
+from utils.paths import CONFIG_PATH, resolve_path
+from utils.currency import (
     SUPPORTED,
     convert_minor,
     format_money,
@@ -27,9 +28,9 @@ from utils_currency import (
     min_deposit_for,
     parse_amount_input,
 )
-from utils_reports import generate_pdf_statement
-from utils_security import VAULT_MAX_TRIES
-from utils_storage import (
+from utils.reports import generate_pdf_statement
+from utils.security import VAULT_MAX_TRIES
+from utils.storage import (
     FILTER_WHERE,
     add_funds,
     authenticate_admin,
@@ -81,7 +82,7 @@ from utils_storage import (
     get_billers_by_category,
     pay_biller,
 )
-from utils_validinput import (
+from utils.validinput import (
     prompt_positive_int,
     prompt_amount_minor,
     prompt_yes_no,
@@ -98,7 +99,7 @@ from utils_validinput import (
 # ── constants ─────────────────────────────────────────────────────────────────
 
 FILTER_KEYS = list(FILTER_WHERE.keys())
-CONFIG_FILE = "config.json"
+CONFIG_FILE = str(CONFIG_PATH)   # <project root>/config.json
 
 
 # ── log-path bundle ───────────────────────────────────────────────────────────
@@ -1283,7 +1284,7 @@ def main() -> None:
     db_path = config.get("active_database_path")
     
     global is_connected
-    if db_path in (None, "") or not os.path.exists(str(db_path)):
+    if db_path in (None, "") or not os.path.exists(resolve_path(db_path)):
         is_connected = False
         print("** No database connected **")
         return  # Skip internal routing setups

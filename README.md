@@ -1,48 +1,317 @@
-# 🏦 BankOS v4 — Enterprise Financial System (Unified Storage + Dual Front Ends)
+# BankOS v4 — Enterprise Financial System
 
-BankOS v4 keeps all operational and audit data in one SQLite database (`data/bank.db`) and exposes two interfaces over the same core modules:
+A practice banking platform that keeps **all operational and audit data in one SQLite database** (`data/bank.db`) and exposes it through two front ends built on the same core modules:
 
-- **Terminal CLI** in `main.py`
-- **Streamlit web app** in `app.py`
+- **Streamlit web app** — `app.py` (customer + admin portals)
+- **Terminal CLI** — `main.py`
 
-Core banking features include account lifecycle operations, vault cash + physical asset handling, credit-card workflows, frozen-account controls, pending transfer approval, utility/tax settlement, loans/bonds/checks, password reset, ingestion/export, and PDF statements.
-
-> **v4 documentation refresh:** this README updates stale v3 wording and aligns schema/flows/menu labels with the current implementation.
+> [!WARNING]
+> **Practice project, demo only.** Do not enter real personal, banking or financial data.
 
 ---
 
-## 📁 Core System Architecture
+## Interface
+
+| Login | Customer Portal | Admin Portal |
+|:---:|:---:|:---:|
+| ![Login page](interface/login.png) | ![Customer account overview](interface/customer-overview.png) | ![Admin platform overview](interface/admin-overview.png) |
+| Customer / Admin login and password reset | Balances, credit utilization, recent activity | Platform stats, frozen accounts, billers |
+
+---
+
+## Table of Contents
+
+1. [Features](#features)
+2. [Quick Start](#quick-start)
+3. [Project Structure](#project-structure)
+4. [Interfaces](#interfaces)
+5. [Banking Rules](#banking-rules)
+6. [Security](#security)
+7. [Database Schema](#database-schema)
+8. [Import & Export](#import--export)
+9. [Configuration](#configuration)
+10. [Changelog](#changelog)
+
+---
+
+## Features
+
+- **Accounts** — create, convert, freeze/unfreeze, delete, set daily transfer limits
+- **Money movement** — deposit, withdraw, transfers (cross-currency, threshold-checked), credit-card payback
+- **Vaults** — secured cash storage plus physical asset records (gold, deeds, bonds, heirlooms)
+- **Financial instruments** — loans, bonds, checks
+- **Bills & taxes** — utility bill and government tax payments routed to seeded billers
+- **Admin controls** — pending-transfer approval queue, audit/transaction logs, database tools
+- **Reporting** — PDF account statements
+- **Password reset** — security-question based, for both customers and admins
+- **Student accounts** — parent contact info, fee waivers, mock SMS alerts
+- **Dual currency** — BDT and USD with a live rate from `config.json`
+
+---
+
+## Quick Start
+
+```bash
+# 1. Install dependencies
+pip install -r requirements.txt
+
+# 2. Run the web app (from the project root, so Streamlit picks up .streamlit/config.toml)
+streamlit run app.py
+```
+```bash
+# or run the terminal version
+python main.py
+```
+
+**Demo logins** (also shown on the login page):
+
+| Role | Username / Account | Password |
+|---|---|---|
+| Bank Admin | `bankadmin` | `bankadmin` |
+| Customer (BDT, Credit Card) | `1070` | `pass1070` |
+| Customer (USD, Non-Credit) | `1184` | `pass1184` |
+| Customer (BDT, Credit Card + Vault) | `1205` | `pass1205` |
+| Customer (BDT, Non-Credit) | `1303` | `pass1303` |
+| Customer (USD, Student) | `1333` | `pass1333` |
+
+> Sample data can be seeded from the CLI: **Admin → Database Management → Seed sample data**.
+
+---
+
+## Project Structure
 
 ```
-bank_system/
-├── config.json              # Active DB path + live usd_to_bdt_rate
-├── main.py                  # Terminal CLI (admin/customer flows)
-├── app.py                   # Streamlit web interface (admin/customer portals)
-├── account_cls.py           # OOP account/vault/payment objects used by storage flows
-├── utils_storage.py         # Unified SQLite schema, auth, CRUD, transfers, logs,
-│                            # pending approvals, import/export, billers, vault ops
-├── utils_logic.py           # Loan/bond/check business logic handlers
-├── utils_currency.py        # BDT/USD conversion, minor-unit helpers, live rate lookup
-├── utils_security.py        # Salted hashing + lockout timing helpers
-├── utils_reports.py         # PDF statement generator (fpdf2)
-├── utils_validinput.py      # CLI validators and prompt wrappers
-├── data/bank.db             # Central persistent SQLite database
-└── statements/              # Generated PDF statements
+BankOS/
+├── app.py                      # Streamlit web app (entry point: streamlit run app.py)
+├── main.py                     # Terminal CLI (entry point: python main.py)
+├── config.json                 # Active DB path + live usd_to_bdt_rate
+├── requirements.txt            # Python dependencies
+├── README.md
+├── .gitignore
+│
+├── models/                     # Domain objects
+│   ├── __init__.py
+│   └── account_cls.py          # Account, credit card, student account, vault, payment objects
+│
+├── utils/                      # Everything the two front ends share
+│   ├── __init__.py
+│   ├── paths.py                # Central path config (project root, data/, statements/, config.json)
+│   ├── storage.py              # Unified SQLite schema, auth, CRUD, transfers, logs,
+│   │                           # pending approvals, import/export, billers, vault ops
+│   ├── logic.py                # Loan / bond / check business logic
+│   ├── currency.py             # BDT/USD conversion, minor-unit helpers, live rate lookup
+│   ├── security.py             # Salted hashing + lockout timing helpers
+│   ├── validinput.py           # CLI validators and prompt wrappers
+│   └── reports.py              # PDF statement generator (fpdf2)
+│
+├── data/
+│   ├── bank.db                 # Central SQLite database (the only DB in use)
+│   └── *.db                    # Four empty legacy v2 log databases (unused, safe to delete)
+│
+├── statements/                 # Generated PDF statements
+│
+└── interface/            # README images (login, customer, admin)
 ```
 
-### Architectural notes (current behavior)
+**How the code fits together**
+
+```
+app.py / main.py  ──►  utils.storage  ──►  utils.logic, utils.currency, utils.security, utils.paths
+        │                    │
+        │                    └──►  models.account_cls  ──►  utils.security, utils.currency
+        └──►  utils.reports, utils.validinput (CLI), utils.currency
+```
+
+The diagram is simplified: `utils.logic` imports `utils.storage` lazily inside its functions to avoid a circular import.
+
+Imports use the package paths, for example `from utils.storage import init_storage` and `from models.account_cls import Account`. Run `streamlit run app.py` or `python main.py` from the project root.
+
+All file paths are defined once in `utils/paths.py` and anchored to the project root, so the app finds `config.json`, `data/bank.db` and `statements/` no matter which folder you launch it from.
+
+### Architecture notes
 
 - Storage is **unified** in one database file (`data/bank.db`), not split per log table.
-- `ensure_log_db()` currently returns `(conn, conn, conn, conn)` to that same central DB.
-- Some comments/docstrings still mention legacy multi-DB naming (`acc`, `tx`, `freeze`, `pending`) for compatibility, but writes/reads target unified tables in `bank.db`.
-- The codebase is modular, but the system is not fully “UI-last/fully decoupled” in a strict architectural sense; both front ends call shared storage functions directly.
+- `ensure_log_db()` returns `(conn, conn, conn, conn)` pointing to that same central DB.
+- Some comments/docstrings still mention legacy multi-DB names (`acc`, `tx`, `freeze`, `pending`) for compatibility, but all reads/writes target unified tables in `bank.db`.
+- The code is modular, but both front ends call shared storage functions directly, so it is not a strictly decoupled "UI-last" design.
 
 ---
 
-## 📊 Relational Database Schema (Unified `data/bank.db`)
+## Interfaces
 
-All business data, audit logs, and transfer-review state are persisted in a single SQLite file.
-`PRAGMA foreign_keys = ON` is set on each connection in `init_storage()`.
+### Streamlit Web App (`app.py`)
+
+**Login page tabs**
+
+- Customer Login
+- Bank Admin Login
+- Reset Password (customer/admin toggle, for users who can't log in)
+
+**Admin portal — sidebar**
+
+| Menu item | Purpose |
+|---|---|
+| Overview | Platform stats, frozen accounts, accounts by type, billers |
+| Account Management | Create, freeze, convert, daily limit, delete, registry |
+| Vault Management | Active vaults, create, destroy |
+| Pending Transfers | Approve / reject large transfers |
+| Audit & Transaction Logs | Account, transaction, freeze and pending logs |
+| Database Management | Table inspector, multi-format importer, exporter |
+| Generate Statements | PDF statement for any account |
+| Reset Password | Change the admin's own password |
+
+**Customer portal — sidebar**
+
+| Menu item | Purpose |
+|---|---|
+| Account Overview | Balance, dual-currency value, credit utilization, recent activity |
+| Deposit & Withdraw | Add or deduct balance |
+| Transfer Funds | Cross-currency, threshold-checked transfers |
+| Credit Card Payback | Shown for credit-card accounts only |
+| Vault Operations | Cash movements, physical assets, close vault |
+| Financial Instruments | Loans, bonds, checks |
+| Utility Bill Payment | Gas, electric, water |
+| Government Tax Settlement | Pay tax authority |
+| Recent Transactions | Transaction history |
+| PDF Statement | Download an official statement |
+| Reset Password | Change the customer's own password |
+
+**In-portal password reset:** after logging in, `Reset Password` shows the user's security question and asks for the security answer, a new password and a confirmation. The account comes from the login session, so users can only reset their own password.
+
+### Terminal CLI (`main.py`)
+
+<details>
+<summary><b>Login menu</b></summary>
+
+```text
+──────────  BankOS — Login  ──────────
+  [1] Admin login
+  [2] Customer login
+  [3] Forgot Password
+  [4] Exit
+────────────────────────────────────────
+```
+</details>
+
+<details>
+<summary><b>Admin menu</b> (9 operations + logout)</summary>
+
+```text
+──────────  Admin Menu  ──────────
+  [1] Account Management
+  [2] Vault Management
+  [3] Show Accounts
+  [4] View Logs
+  [5] Bank Overview
+  [6] Freeze / Unfreeze Account
+  [7] Pending Transfer Approval
+  [8] Generate PDF Statement
+  [9] Database Management
+  [0] Logout
+────────────────────────────────────────
+```
+
+Database Management submenu:
+
+```text
+  [1] Export accounts (XLSX / CSV)
+  [2] View all tables (row counts)
+  [3] Seed sample data
+  [4] Import data in the existing tables
+  [0] Back
+```
+</details>
+
+<details>
+<summary><b>Customer menu</b> (11 operations)</summary>
+
+```text
+──────────  Customer Menu — Acc <id>  ──────────
+  [1] View account details
+  [2] Add / Deduct balance
+  [3] Transfer
+  [4] Manage vault
+  [5] Payback credit card
+  [6] Last 10 transactions
+  [7] Generate PDF statement
+  [8] Financial Instruments
+  [9] Utility Bill Payment
+  [10] Government Tax Settlement
+  [11] Logout
+────────────────────────────────────────
+```
+</details>
+
+Notable CLI submenus:
+
+- Transfer modes: `1→1`, `1→many`, `many→1`
+- Financial instruments: loan disbursal/repayment, bond purchase/redemption, check issue/clear/bounce
+- Utility/tax routing via seeded billers
+- Forgot-password flow for customer or admin
+
+---
+
+## Banking Rules
+
+### Currency and transfers
+
+- Supported currencies: **BDT** and **USD**.
+- Money is stored as integer minor units (paisa/cents).
+- Live FX conversion uses `config.json → usd_to_bdt_rate` on each lookup.
+- Cross-currency transfers auto-convert the receiver's credit (`convert_minor`).
+- A daily outbound transfer cap is enforced per account (`daily_transfer_limit`).
+- Large transfers are queued for admin review (`PENDING_THRESHOLD`):
+  - USD: `100_000` minor (1,000.00 USD)
+  - BDT: `12_000_000` minor (120,000.00 BDT)
+- Credit-card transfers/checkouts can use `credit_used` up to `credit_card_limit`.
+
+### Student accounts
+
+- Requires `parent_name` and `parent_phone`.
+- Minimum opening deposit is currency-aware: 100 BDT floor (`MIN_DEPOSIT_BDT_MINOR = 10000`), with the USD minimum calculated from the live rate.
+- Fee-waiver flags are always set: `maintenance_fee_waived`, `sms_alert_fee_waived`, `card_issuance_fee_waived` = `1`.
+- Deduct/transfer paths can return parent-notification payloads (`sms_telemetry`) for the front end to display.
+
+### Vaults
+
+- Credentials are salted and hashed (`vault_password_hash` + `vault_password_salt`).
+- Supports cash movements and physical asset records.
+- Asset categories: `gold`, `paper_deeds`, `corporate_bonds`, `heirlooms`.
+- Destroying a vault can optionally move its cash back to the account balance.
+
+### Loans, bonds, checks, bills, taxes
+
+| Item | Behavior |
+|---|---|
+| **Loans** | Disburse to account, repay from account, track status and remaining balance |
+| **Bonds** | Purchase debits face value; redemption only at/after maturity pays `round(face_value × (1 + yield_rate))` |
+| **Checks** | Issue debits funds as held; clearing updates status only; bouncing refunds |
+| **Utilities / Tax** | Payments route to seeded biller/tax-authority receiving accounts and are logged by category |
+
+### Reporting and auditability
+
+- Transaction, account, freeze and pending-transfer records are queryable from the admin interfaces.
+- `utils/reports.py` generates PDF statements (up to 50 recent transactions) with account summary, limits, freeze state, and vault/credit details where applicable.
+
+---
+
+## Security
+
+- Passwords, security answers, vault passwords and card PINs use **salted SHA-256** (`hash_secret()` / `verify_secret()`), with a random salt per secret (`secrets.token_hex(16)`).
+- Customer login **lockout** after 3 failed attempts (`MAX_ATTEMPTS = 3`) for 2 minutes (`LOCKOUT_MINUTES = 2`).
+- Vault operations allow bounded attempts (`VAULT_MAX_TRIES = 3`) in the CLI flow.
+- **Self-service password reset** for both customers and admins via security-question verification (login page, in-portal sidebar, and CLI).
+- `freeze_account()` blocks restricted operations (transfers, withdrawals, payments).
+
+### SQL import safety
+
+`.sql` ingestion is blocked if the script contains `DROP`, `ALTER`, `ATTACH`, `DETACH`, `PRAGMA` or `VACUUM`. Allowed scripts run in a single transaction with rollback on failure.
+
+---
+
+## Database Schema
+
+All business data, audit logs and transfer-review state live in one SQLite file. `PRAGMA foreign_keys = ON` is set on each connection in `init_storage()`.
 
 ```
                          ┌───────────────┐
@@ -60,81 +329,74 @@ All business data, audit logs, and transfer-review state are persisted in a sing
  ┌────────┐ ┌───────┐   ┌──────────────┐ ┌──────────────┐ ┌─────────┐ ┌────────────┐
  │ vaults │ │ loans │   │    bonds     │ │    checks    │ │ billers │ │ account_log│
  └───┬────┘ └───────┘   └──────────────┘ └──────────────┘ │(FK→acc) │ └────────────┘
-     │                                                     └─────────┘
+     │                                                    └─────────┘
      ▼
  ┌──────────────┐   ┌──────────────┐   ┌───────────────────┐   ┌──────────────────┐
- │ vault_items  │   │  freeze_log  │   │  transaction_log   │   │ pending_transfers │
+ │ vault_items  │   │  freeze_log  │   │  transaction_log  │   │ pending_transfers│
  └──────────────┘   └──────────────┘   └───────────────────┘   └──────────────────┘
 ```
 
-### 0. `admins`
+<details>
+<summary><b>Core tables</b> — admins, accounts, billers, vaults, vault_items</summary>
+
+#### `admins`
 
 - `admin_id` (PK autoincrement), `username` (unique)
 - `password_hash`, `password_salt`, optional `original_password`
 - `security_question`, `security_answer_hash`, `security_answer_salt`
 
-`initialize_schema()` ensures a default `bankadmin` admin row exists.
-
-### 1. Core customer/system entity tables
+`initialize_schema()` ensures a default `bankadmin` row exists.
 
 #### `accounts`
 
-Key columns:
-
 - Identity/auth: `acc_num`, `acc_password_hash`, `acc_password_salt`, security-question fields
-- Money/currency: `acc_balance` (minor-unit integer), `currency` (`BDT`/`USD`)
+- Money/currency: `acc_balance` (minor units), `currency` (`BDT` / `USD`)
 - Type: `acc_type` (`credit_card`, `non_credit_card`, `student`, `utility_biller`, `tax_authority`)
 - Controls: `daily_transfer_limit`, `is_frozen`, `failed_login_attempts`, `locked_until`
-- Card fields: debit and credit card numbers + salted PIN hashes
-- Credit tracking: `credit_card_limit`, `credit_used`
-- Vault linkage: `vault_no`, `vault_password_hash`, `vault_password_salt`, `vault_balance`
-- Student fields: `parent_name`, `parent_phone`, fee waiver flags
+- Cards: debit and credit card numbers + salted PIN hashes
+- Credit: `credit_card_limit`, `credit_used`
+- Vault link: `vault_no`, `vault_password_hash`, `vault_password_salt`, `vault_balance`
+- Student: `parent_name`, `parent_phone`, fee-waiver flags
 
-All balances/limits are stored in minor units (paisa/cents).
+All balances and limits are stored in minor units.
 
 #### `billers`
 
 - `biller_id` (PK), `biller_name`, `biller_category` (`gas`, `electric`, `water`, `tax`)
-- `receiving_acc_num` (FK to `accounts`)
-
-Seeded system receiving accounts include Titas Gas, DESCO, WASA, and National Board of Revenue.
+- `receiving_acc_num` (FK → `accounts`)
+- Seeded: Titas Gas, DESCO, WASA, National Board of Revenue
 
 #### `vaults`
 
-- `vault_no` (PK), `acc_num` (FK), `cash_balance`
-- `vault_password_hash`, `vault_password_salt`
+- `vault_no` (PK), `acc_num` (FK), `cash_balance`, `vault_password_hash`, `vault_password_salt`
 
 #### `vault_items`
 
-- `item_id` (PK), `vault_no`
-- `item_type` (`gold`, `paper_deeds`, `corporate_bonds`, `heirlooms`)
+- `item_id` (PK), `vault_no`, `item_type` (`gold`, `paper_deeds`, `corporate_bonds`, `heirlooms`)
 - `description`, `est_value_minor`, `added_at`
+</details>
 
-### 2. Financial instrument tables
+<details>
+<summary><b>Financial instrument tables</b> — loans, bonds, checks</summary>
 
 #### `loans`
 
-- `loan_id` (PK), `acc_num` (FK)
-- `principal`, `remaining_balance` (minor units)
+- `loan_id` (PK), `acc_num` (FK), `principal`, `remaining_balance`
 - `interest_rate`, `status` (`active`, `settled`), `disbursed_at`, `next_payment_due`
-
-Loan disbursal credits account balance; repayment debits balance and reduces remaining balance.
 
 #### `bonds`
 
-- `bond_id` (PK), `acc_num` (FK)
-- `face_value`, `yield_rate`, `maturity_timestamp`, `status` (`active`, `redeemed`), `purchased_at`
-
-Purchase debits face value; redemption after maturity credits `round(face_value * (1 + yield_rate))`.
+- `bond_id` (PK), `acc_num` (FK), `face_value`, `yield_rate`
+- `maturity_timestamp`, `status` (`active`, `redeemed`), `purchased_at`
 
 #### `checks`
 
-- `check_id` (PK), `acc_num` (FK)
-- `amount`, `payee_name`, `memo`, `status` (`issued`, `cleared`, `bounced`), `issued_at`
+- `check_id` (PK), `acc_num` (FK), `amount`, `payee_name`, `memo`
+- `status` (`issued`, `cleared`, `bounced`), `issued_at`
+</details>
 
-Issued checks debit funds immediately as held amount. Clearing updates status only; bouncing refunds.
-
-### 3. Audit and operational logs
+<details>
+<summary><b>Audit and operational logs</b> — account_log, freeze_log, transaction_log, pending_transfers</summary>
 
 #### `account_log`
 
@@ -147,221 +409,33 @@ Issued checks debit funds immediately as held amount. Clearing updates status on
 #### `transaction_log`
 
 - `id` (PK), optional `tx_id`, `timestamp`, `acc_num`
-- `type`/`tx_type`, `amount`, `currency`, `category`, `status`, `balance_after`
+- `type` / `tx_type`, `amount`, `currency`, `category`, `status`, `balance_after`
 
 #### `pending_transfers`
 
 - `id` (PK), optional `transfer_id`, `timestamp`
 - `sender_acc_num`, `receiver_acc_num`, `amount`, `currency`, `via_credit`
 - `status` (`pending`, `approved`, `rejected`), `reviewed_at`
-
-Large transfers are queued here for admin review based on currency-specific thresholds.
-
----
-
-## 🔐 Security Notes
-
-- Passwords, security answers, vault passwords, and card PINs use salted SHA-256 (`hash_secret()` / `verify_secret()`).
-- Random salt is generated per secret (`secrets.token_hex(16)`).
-- Customer login lockout is enforced after 3 failed attempts (`MAX_ATTEMPTS = 3`) for 2 minutes (`LOCKOUT_MINUTES = 2`).
-- Vault operation gating supports bounded attempts (`VAULT_MAX_TRIES = 3`) in CLI flow.
-- Self-service password reset exists for both customers and admins using security-question verification.
-- `freeze_account()` state blocks restricted operations (transfers/withdrawals/payment flows).
-
-### SQL import safety
-
-`.sql` ingestion is blocked if script content includes `DROP`, `ALTER`, `ATTACH`, `DETACH`, `PRAGMA`, or `VACUUM`.
-Allowed scripts run in a transaction with rollback on failure.
+</details>
 
 ---
 
-## 🛠️ Operational Interfaces (v4)
+## Import & Export
 
-Both interfaces run against the same storage layer (`utils_storage.py`) and central DB.
+**Import** (`import_file_to_table`) — CSV, XLSX, JSON, XML, SQL
 
-### 1) Terminal CLI (`main.py`)
-
-#### Login menu
-
-```text
-──────────  BankOS — Login  ──────────
-  [1] Admin login
-  [2] Customer login
-  [3] Forgot Password
-  [4] Exit
-────────────────────────────────────────
-```
-
-#### Admin menu (9 operations + logout)
-
-```text
-──────────  Admin Menu  ──────────
-  [1] Account Management
-  [2] Vault Management
-  [3] Show Accounts
-  [4] View Logs
-  [5] Bank Overview
-  [6] Freeze / Unfreeze Account
-  [7] Pending Transfer Approval
-  [8] Generate PDF Statement
-  [9] Database Management
-  [0] Logout
-────────────────────────────────────────
-```
-
-Admin Database Management submenu:
-
-```text
-  [1] Export accounts (XLSX / CSV)
-  [2] View all tables (row counts)
-  [3] Seed sample data
-  [4] Import data in the existing tables
-  [0] Back
-```
-
-#### Customer menu (11 operations)
-
-```text
-──────────  Customer Menu — Acc <id>  ──────────
-  [1] View account details
-  [2] Add / Deduct balance
-  [3] Transfer
-  [4] Manage vault
-  [5] Payback credit card
-  [6] Last 10 transactions
-  [7] Generate PDF statement
-  [8] Financial Instruments
-  [9] Utility Bill Payment
-  [10] Government Tax Settlement
-  [11] Logout
-────────────────────────────────────────
-```
-
-Notable CLI submenus:
-
-- Transfer modes: `1→1`, `1→many`, `many→1`
-- Financial instruments: loan disbursal/repayment, bond purchase/redemption, check issue/clear/bounce
-- Utility/tax routing via seeded billers
-- Forgot password flow for customer or admin
-
-### 2) Streamlit Web App (`app.py`)
-
-#### Authentication tabs
-
-- **Customer Login**
-- **Bank Admin Login**
-- **Reset Password** (customer/admin toggle)
-
-#### Admin portal navigation
-
-- `📊 Overview`
-- `👥 Account Management`
-- `🔐 Vault Management`
-- `⏳ Pending Transfers`
-- `📜 Audit & Transaction Logs`
-- `🗄️ Database Management`
-- `📄 Generate Statements`
-
-#### Customer portal navigation
-
-- `🏠 Account Overview`
-- `💰 Deposit & Withdraw`
-- `💸 Transfer Funds`
-- `💳 Credit Card Payback` (shown for credit-card accounts)
-- `🔐 Vault Operations`
-- `📈 Financial Instruments`
-- `💡 Utility Bill Payment`
-- `🏛️ Government Tax Settlement`
-- `📜 Recent Transactions`
-- `📄 PDF Statement`
-
----
-
-## 💱 Currency, Transfers, and Account Rules
-
-- Supported currencies: **BDT** and **USD**.
-- Monetary storage is integer minor units (paise/cents).
-- Live FX conversion uses `config.json -> usd_to_bdt_rate` on each lookup.
-- Cross-currency transfers auto-convert receiver credit (`convert_minor`).
-- Daily outbound transfer cap enforced per account (`daily_transfer_limit`).
-- Threshold-based pending review (`PENDING_THRESHOLD`):
-  - USD: `100_000` minor (1,000.00 USD)
-  - BDT: `12_000_000` minor (120,000.00 BDT)
-- Credit-card transfers/checkouts can consume `credit_used` up to `credit_card_limit`.
-- Student operations include parent-contact metadata and mock SMS telemetry payloads for qualifying events.
-
----
-
-## 🎓 Student Account Rules
-
-- Student account type requires `parent_name` and `parent_phone`.
-- Minimum opening deposit is **currency-aware**:
-  - baseline floor is 100 BDT (`MIN_DEPOSIT_BDT_MINOR = 10000`)
-  - USD minimum is calculated from live exchange rate
-- Student creation enforces fee-waiver fields:
-  - `maintenance_fee_waived = 1`
-  - `sms_alert_fee_waived = 1`
-  - `card_issuance_fee_waived = 1`
-- Deduct/transfer paths can include parent notification payloads (`sms_telemetry`) for front-end display.
-
----
-
-## 🔐 Vault Cash & Physical Assets
-
-- Vault credentials are salted/hashed (`vault_password_hash` + `vault_password_salt`).
-- Vault supports cash movements and physical asset records.
-- Physical asset categories are constrained to:
-  - `gold`
-  - `paper_deeds`
-  - `corporate_bonds`
-  - `heirlooms`
-- Vault destruction can optionally transfer vault cash back to account balance.
-
----
-
-## 📈 Loans, Bonds, Checks, Utility Bills, Taxes
-
-- **Loans**: disburse to account, repay from account, track status and remaining balance.
-- **Bonds**: purchase debits account, redemption available only at/after maturity.
-- **Checks**: issue (debit/hold), clear (status update), bounce (refund).
-- **Utilities/Tax**: payments route to seeded biller/tax authority receiving accounts and log by category.
-
----
-
-## 🧾 Reporting and Auditability
-
-- Transaction, account, freeze, and pending-transfer records are queryable via admin interfaces.
-- `utils_reports.py` generates PDF account statements (up to 50 recent transactions).
-- Statements include account summary, limits, freeze state, vault/credit details where applicable.
-
----
-
-## 📦 Ingestion & Export Engine
-
-### Import formats (`import_file_to_table`)
-
-- CSV
-- XLSX
-- JSON
-- XML
-- SQL (guarded by blocked-statement filter)
-
-Behavior notes:
-
-- CSV/XLSX/XML tolerate unknown source fields (non-matching keys dropped).
+- CSV / XLSX / XML tolerate unknown source fields (non-matching keys are dropped).
 - JSON import is strict about unknown columns.
-- SQL scripts are executed transactionally after blocked-keyword check.
-- Import targets existing schema tables discovered dynamically from `sqlite_master`.
+- SQL scripts run transactionally after the blocked-keyword check.
+- Targets are existing tables discovered dynamically from `sqlite_master`.
 
-### Export formats
-
-- Accounts export to **CSV** and **XLSX** (CLI + Streamlit admin workflows).
+**Export** — accounts to **CSV** and **XLSX** (CLI and Streamlit admin).
 
 ---
 
-## ⚙️ Persistence & Runtime Configuration
+## Configuration
 
-- Active DB and FX rate are in `config.json`:
+Active DB path and FX rate live in `config.json`:
 
 ```json
 {
@@ -370,20 +444,7 @@ Behavior notes:
 }
 ```
 
-- CLI boot path checks config and DB path state before starting login routing.
-- Streamlit initializes storage/session connections on app startup.
+- The CLI checks config and DB path state before routing to login.
+- Streamlit initializes storage and session connections on startup.
 
 ---
-
-## CHANGELOG — v3 → v4 implementation alignment
-
-1. Updated repository title and version references to **v4**.
-2. Corrected interface documentation to include **both** front ends (`main.py` CLI + `app.py` Streamlit).
-3. Corrected CLI menu counts/labels (login/admin/customer/database-management) to match current `main.py` output.
-4. Corrected schema documentation to match actual table/column names (e.g., `check_id`, `sender_acc_num`, `vault_balance`, lockout fields).
-5. Documented true persistence behavior: unified `data/bank.db`; `ensure_log_db()` returns central DB connections despite legacy naming.
-6. Added current BDT/USD minor-unit model, live FX from `config.json`, cross-currency conversion, pending-threshold review, and daily-limit enforcement.
-7. Updated student-account rules with parent metadata + currency-aware minimum opening deposit.
-8. Documented credit-card, vault cash/physical assets, freeze controls, and password/PIN/vault salted hashing as implemented.
-9. Synced ingestion/export section with actual CSV/XLSX/JSON/XML/SQL import behavior and CSV/XLSX account export paths.
-10. Removed stale “new/fix pass” and over-strong decoupling claims that no longer describe the current code accurately.

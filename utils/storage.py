@@ -1,5 +1,5 @@
 """
-utils_storage.py  —  BankOS
+utils/storage.py  —  BankOS
 SQLite + CSV persistence layer.
 
 init_storage(db_path) opens/creates the single unified bank.db connection
@@ -35,13 +35,15 @@ import sqlite3
 from datetime import datetime
 from pathlib import Path
 
-import utils_logic
+from utils import logic
 
-from utils_currency import SUPPORTED, convert_minor, format_money
+from utils.currency import SUPPORTED, convert_minor, format_money
 
-os.makedirs("data", exist_ok=True)
-DB_PATH = "data/bank.db"
-from utils_security import (
+from utils.paths import DATA_DIR, DB_PATH as _DB_PATH
+
+os.makedirs(DATA_DIR, exist_ok=True)
+DB_PATH = str(_DB_PATH)   # <project root>/data/bank.db
+from utils.security import (
     MAX_ATTEMPTS,
     VAULT_MAX_TRIES,
     compute_lockout_until,
@@ -50,9 +52,7 @@ from utils_security import (
     now_display,
     verify_secret,
 )
-from account_cls import Account, CreditCard, Non_Credit_Card, StudentAccount, Vault, VaultItem
-
-os.makedirs("data", exist_ok=True)
+from models.account_cls import Account, CreditCard, Non_Credit_Card, StudentAccount, Vault, VaultItem
 
 # ── constants ─────────────────────────────────────────────────────────────────
 
@@ -2107,7 +2107,7 @@ def _import_sql(conn: sqlite3.Connection, file_path: str) -> tuple[int, list[str
 # =============================================================================
 
 def execute_loan_disbursal(conn: sqlite3.Connection, tx_log_conn: sqlite3.Connection, acc_num: int, principal: int, interest_rate: float) -> dict:
-    res = utils_logic.disburse_loan(conn, tx_log_conn, acc_num, principal, interest_rate)
+    res = logic.disburse_loan(conn, tx_log_conn, acc_num, principal, interest_rate)
     if res.get("status") == "success":
         data = res["data"]
         log_transaction(conn, tx_log_conn, acc_num, "loan_disbursal", principal, data["currency"], "other", "success", data["balance_after"])
@@ -2115,7 +2115,7 @@ def execute_loan_disbursal(conn: sqlite3.Connection, tx_log_conn: sqlite3.Connec
 
 
 def execute_loan_repayment(conn: sqlite3.Connection, tx_log_conn: sqlite3.Connection, loan_id: int, payment_amount_minor: int) -> dict:
-    res = utils_logic.repay_loan(conn, tx_log_conn, loan_id, payment_amount_minor)
+    res = logic.repay_loan(conn, tx_log_conn, loan_id, payment_amount_minor)
     if res.get("status") == "success":
         data = res["data"]
         log_transaction(conn, tx_log_conn, data["acc_num"], "loan_repayment", data["amount_paid"], data["currency"], "other", "success", data["balance_after"])
@@ -2123,7 +2123,7 @@ def execute_loan_repayment(conn: sqlite3.Connection, tx_log_conn: sqlite3.Connec
 
 
 def execute_bond_purchase(conn: sqlite3.Connection, tx_log_conn: sqlite3.Connection, acc_num: int, face_value: int, yield_rate: float, maturity_timestamp: str) -> dict:
-    res = utils_logic.purchase_bond(conn, tx_log_conn, acc_num, face_value, yield_rate, maturity_timestamp)
+    res = logic.purchase_bond(conn, tx_log_conn, acc_num, face_value, yield_rate, maturity_timestamp)
     if res.get("status") == "success":
         data = res["data"]
         log_transaction(conn, tx_log_conn, acc_num, "bond_purchase", face_value, data["currency"], "other", "success", data["balance_after"])
@@ -2131,7 +2131,7 @@ def execute_bond_purchase(conn: sqlite3.Connection, tx_log_conn: sqlite3.Connect
 
 
 def execute_bond_redemption(conn: sqlite3.Connection, tx_log_conn: sqlite3.Connection, bond_id: int) -> dict:
-    res = utils_logic.redeem_bond(conn, tx_log_conn, bond_id)
+    res = logic.redeem_bond(conn, tx_log_conn, bond_id)
     if res.get("status") == "success":
         data = res["data"]
         log_transaction(conn, tx_log_conn, data["acc_num"], "bond_redemption", data["redemption_amt"], data["currency"], "other", "success", data["balance_after"])
@@ -2139,7 +2139,7 @@ def execute_bond_redemption(conn: sqlite3.Connection, tx_log_conn: sqlite3.Conne
 
 
 def execute_check_issuance(conn: sqlite3.Connection, tx_log_conn: sqlite3.Connection, acc_num: int, amount: int, payee_name: str | None = None, memo: str | None = None) -> dict:
-    res = utils_logic.issue_check(conn, tx_log_conn, acc_num, amount, payee_name, memo)
+    res = logic.issue_check(conn, tx_log_conn, acc_num, amount, payee_name, memo)
     if res.get("status") == "success":
         data = res["data"]
         log_transaction(conn, tx_log_conn, acc_num, "check_issued", amount, data["currency"], "other", "success", data["balance_after"])
@@ -2147,12 +2147,12 @@ def execute_check_issuance(conn: sqlite3.Connection, tx_log_conn: sqlite3.Connec
 
 
 def execute_check_clearing(conn: sqlite3.Connection, tx_log_conn: sqlite3.Connection, check_id: int) -> dict:
-    res = utils_logic.clear_check(conn, tx_log_conn, check_id)
+    res = logic.clear_check(conn, tx_log_conn, check_id)
     return res
 
 
 def execute_check_bouncing(conn: sqlite3.Connection, tx_log_conn: sqlite3.Connection, check_id: int) -> dict:
-    res = utils_logic.bounce_check(conn, tx_log_conn, check_id)
+    res = logic.bounce_check(conn, tx_log_conn, check_id)
     if res.get("status") == "success":
         data = res["data"]
         log_transaction(conn, tx_log_conn, data["acc_num"], "check_bounced_reversal", data["amount"], data["currency"], "other", "success", data["balance_after"])

@@ -1,5 +1,5 @@
 """
-utils_logic.py — BankOS v3
+utils/logic.py — BankOS v3
 Headless financial derivative logic handlers.
 
 Phase 5 implementations
@@ -11,10 +11,10 @@ Checks:  issue_check, clear_check, bounce_check
 All public functions:
   • Return  {"status": "success"|"error", "message": str, "data": ...}
   • Treat all monetary amounts as minor-unit integers throughout.
-  • Write audit rows via log_transaction() from utils_storage.
+  • Write audit rows via log_transaction() from utils.storage.
   • Never call print() or input().
 
-DB column contract (as defined in utils_storage.SCHEMA):
+DB column contract (as defined in utils.storage.SCHEMA):
   loans:  loan_id, acc_num, principal (INT), remaining_balance (INT),
           interest_rate (REAL), status ('active'|'settled'), disbursed_at
   bonds:  bond_id, acc_num, face_value (INT), yield_rate (REAL),
@@ -78,7 +78,7 @@ def disburse_loan(
     principal:     int,
     interest_rate: float,
 ) -> dict:
-    from utils_storage import log_transaction
+    from utils.storage import log_transaction
 
     """
     Disburse a new loan.
@@ -150,7 +150,7 @@ def repay_loan(
     loan_id:              int,
     payment_amount_minor: int,
 ) -> dict:
-    from utils_storage import log_transaction
+    from utils.storage import log_transaction
 
     """
     Apply a repayment against an active loan.
@@ -248,7 +248,7 @@ def purchase_bond(
     yield_rate:         float,
     maturity_timestamp: str,
 ) -> dict:
-    from utils_storage import log_transaction
+    from utils.storage import log_transaction
 
     """
     Purchase a bond.
@@ -347,7 +347,7 @@ def redeem_bond(
     tx_log_conn: sqlite3.Connection,
     bond_id:     int,
 ) -> dict:
-    from utils_storage import log_transaction
+    from utils.storage import log_transaction
 
     """
     Redeem a matured bond.
@@ -453,7 +453,7 @@ def issue_check(
     payee_name:  str | None = None,
     memo:        str | None = None,
 ) -> dict:
-    from utils_storage import log_transaction
+    from utils.storage import log_transaction
 
     """
     Issue a check.
@@ -532,7 +532,7 @@ def clear_check(
     tx_log_conn: sqlite3.Connection,
     check_id:    int,
 ) -> dict:
-    from utils_storage import log_transaction
+    from utils.storage import log_transaction
 
     """
     Clear an issued check.
@@ -593,7 +593,7 @@ def bounce_check(
     tx_log_conn: sqlite3.Connection,
     check_id:    int,
 ) -> dict:
-    from utils_storage import log_transaction
+    from utils.storage import log_transaction
 
     """
     Bounce an issued check.

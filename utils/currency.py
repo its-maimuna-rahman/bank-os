@@ -1,5 +1,5 @@
 """
-utils_currency.py
+utils/currency.py
 Currency conversion and amount formatting for BankOS.
 
 All internal amounts are stored as integers in the smallest unit
@@ -7,7 +7,7 @@ All internal amounts are stored as integers in the smallest unit
 here, at display time only.
 
 The USD<->BDT exchange rate is no longer a hardcoded constant. It is
-read live from config.json (the same file utils_storage.py uses for
+read live from config.json (the same file utils/storage.py uses for
 active_database_path), so an admin can update the rate on disk and have
 every subsequent conversion pick it up without restarting the program.
 If config.json is missing, unreadable, or the key is bad, a safe
@@ -19,14 +19,16 @@ from __future__ import annotations
 import json
 import logging
 
-# NOTE: utils_validinput imports utils_currency, so we do NOT import it here
+from utils.paths import CONFIG_PATH as _CONFIG_PATH
+
+# NOTE: utils.validinput imports utils.currency, so we do NOT import it here
 # to avoid a circular dependency.  choose_currency() keeps its own loop.
 
 logger = logging.getLogger(__name__)
 
 # ── constants ─────────────────────────────────────────────────────────────────
 
-CONFIG_PATH: str = "config.json"
+CONFIG_PATH: str = str(_CONFIG_PATH)   # <project root>/config.json
 DEFAULT_USD_TO_BDT: float = 120.0      # safety fallback only, not a live rate
 
 SUPPORTED: set[str] = {"BDT", "USD"}

@@ -27,7 +27,7 @@ from typing import NamedTuple
 import pandas as pd
 import streamlit as st
 
-from utils_storage import (
+from utils.storage import (
     init_storage,
     ensure_log_db,
     authenticate_admin,
@@ -69,7 +69,7 @@ from utils_storage import (
     execute_check_bouncing,
     verify_vault_auth,
 )
-from utils_currency import (
+from utils.currency import (
     format_money,
     format_money_dual,
     to_minor,
@@ -79,7 +79,7 @@ from utils_currency import (
     min_deposit_for,
     SUPPORTED,
 )
-from utils_reports import generate_pdf_statement
+from utils.reports import generate_pdf_statement
 
 
 class Logs(NamedTuple):
@@ -578,11 +578,12 @@ li[role="option"]:hover, li[aria-selected="true"]{background:rgba(81,120,140,.14
 [data-testid="stAlert"]{border-radius:14px;}
 </style>""".replace("/*__ICON_VARS__*/", _icon_vars_css())
 
-# Only used when the Streamlit base theme is dark (e.g. a dark .streamlit/config.toml):
-# lightens the canvas-based tables so they match the light page.
-_DARK_BASE_FALLBACK_CSS = (
-    '<style>[data-testid="stDataFrame"]{filter:invert(.9) hue-rotate(180deg);}</style>'
-)
+# st.dataframe is drawn on a <canvas>, so page CSS cannot recolor it: it follows the active
+# Streamlit theme. The tables are meant to stay DARK (black) whichever theme is active:
+#   - dark theme (e.g. .streamlit/config.toml with base = "dark"): natively dark -> leave alone
+#   - light theme                                                : darken with a filter
+#   - no theme set (Streamlit follows the browser/OS)            : darken only if the OS is light
+_TABLE_DARK_FILTER = '[data-testid="stDataFrame"]{filter:invert(.9) hue-rotate(180deg);}'
 
 
 def inject_theme() -> None:
@@ -593,8 +594,13 @@ def inject_theme() -> None:
         base = st.get_option("theme.base")
     except Exception:
         base = None
-    if base == "dark":
-        st.markdown(_DARK_BASE_FALLBACK_CSS, unsafe_allow_html=True)
+    if base == "light":
+        st.markdown(f"<style>{_TABLE_DARK_FILTER}</style>", unsafe_allow_html=True)
+    elif base != "dark":
+        st.markdown(
+            f"<style>@media (prefers-color-scheme: light){{{_TABLE_DARK_FILTER}}}</style>",
+            unsafe_allow_html=True,
+        )
 
 
 def _sidebar_brand() -> None:

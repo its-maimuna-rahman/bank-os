@@ -1,5 +1,5 @@
 """
-utils_reports.py
+utils/reports.py
 PDF statement generation for BankOS.
 
 Generates a formatted PDF account statement using fpdf2.
@@ -17,7 +17,8 @@ import sqlite3
 from datetime import datetime
 from pathlib import Path
 
-from utils_currency import format_money, format_money_dual
+from utils.currency import format_money, format_money_dual
+from utils.paths import STATEMENTS_DIR
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -67,9 +68,9 @@ def generate_pdf_statement(
 
     # ── resolve output path ───────────────────────────────────────────────────
     if out_path is None:
-        out_path = (
-            f"statements/statement_{acc_num}_"
-            f"{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.pdf"
+        out_path = str(
+            STATEMENTS_DIR
+            / f"statement_{acc_num}_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.pdf"
         )
 
     Path(out_path).parent.mkdir(parents=True, exist_ok=True)

@@ -1,5 +1,5 @@
 """
-account_cls.py
+models/account_cls.py
 Core OOP models for BankOS v3.
 
 Phase 5 changes
@@ -9,7 +9,7 @@ Phase 5 changes
       ``accounts.vault_balance`` in the DB; this object mirrors that integer).
     * ``items`` — an in-memory list of ``VaultItem`` named-tuples that mirrors
       the ``vault_items`` table rows loaded from the DB.  The list is populated
-      by ``utils_storage.load_accounts()`` after the Vault is constructed.
+      by ``utils.storage.load_accounts()`` after the Vault is constructed.
     * ``add_item`` / ``remove_item`` helpers let callers mutate the local cache
       without touching the DB (persistence is always the storage layer's job).
     * ``total_estimated_value`` — cash_balance + sum of all item est_values.
@@ -23,8 +23,8 @@ from __future__ import annotations
 
 from typing import NamedTuple
 
-from utils_security import verify_secret
-from utils_currency import format_money, convert_minor
+from utils.security import verify_secret
+from utils.currency import format_money, convert_minor
 
 
 # =============================================================================
@@ -40,7 +40,7 @@ class VaultItem(NamedTuple):
 
     ``item_id`` is ``None`` for items that have been constructed locally but
     not yet persisted (i.e., between the admin entering the details and the
-    INSERT completing).  After the INSERT, ``utils_storage`` should rebuild the
+    INSERT completing).  After the INSERT, ``utils.storage`` should rebuild the
     object with the real ``item_id`` from ``cursor.lastrowid``.
     """
     item_id:     int | None   # None until persisted
@@ -419,7 +419,7 @@ class StudentAccount(Non_Credit_Card):
 
     Minimum-deposit validation is intentionally absent here.  The caller
     (``main.py``'s account-creation flow) must check the deposit against
-    ``utils_currency.min_deposit_for(currency, rate)`` *before* constructing
+    ``utils.currency.min_deposit_for(currency, rate)`` *before* constructing
     this object, because the 100 BDT floor depends on the live exchange rate —
     something this class should not know about.
     """
@@ -601,7 +601,7 @@ class CreditCard(Account):
 
 
 # =============================================================================
-#  Payment Processor (in-memory OOP path — DB persistence is utils_storage)
+#  Payment Processor (in-memory OOP path — DB persistence is utils.storage)
 # =============================================================================
 
 class Payment_Processor:
@@ -609,7 +609,7 @@ class Payment_Processor:
     Handles in-memory fund movement between Account objects.
 
     This class operates purely on OOP objects.  DB persistence is the
-    responsibility of ``utils_storage``.  No ``print()`` or ``input()`` calls.
+    responsibility of ``utils.storage``.  No ``print()`` or ``input()`` calls.
     All amounts are in minor units (paise / cents).
     Cross-currency transfers auto-convert via ``convert_minor()``.
     """

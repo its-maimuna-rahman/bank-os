@@ -1,5 +1,5 @@
 """
-utils_security.py
+utils/security.py
 Security helpers for BankOS: salted hashing, lockout.
 
 Phase 4 upgrade: hash_password() (a single unsalted SHA-256 digest) has
@@ -11,7 +11,7 @@ digest and the salt — a lone hash column can no longer be verified
 against, since the salt is required to reproduce it.
 
 Admin authentication is no longer a hardcoded module-level constant.
-Admins are rows in the `admins` table (see utils_storage.py's
+Admins are rows in the `admins` table (see utils/storage.py's
 authenticate_admin(), Part 2), authenticated the same digest+salt way
 as everything else instead of a single baked-in password.
 """
